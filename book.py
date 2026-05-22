@@ -11,6 +11,10 @@ TARGET_CLASSES = {
     5: ["HYBRID RACE", "10:00"],
 }
 
+LOGIN_URL = "PUT_LOGIN_URL_HERE"
+SCHEDULE_URL = "PUT_SCHEDULE_URL_HERE"
+BOOK_URL = "PUT_BOOK_URL_HERE"
+
 login_value = os.getenv("EFITNESS_LOGIN")
 password_value = os.getenv("EFITNESS_PASSWORD")
 
@@ -30,12 +34,15 @@ def should_book(class_name, class_time, target_dt):
     return expected[0] == class_name.upper() and expected[1] == class_time
 
 def login():
-    raise NotImplementedError("Tu wstawimy prawdziwe logowanie po poznaniu endpointu.")
+    raise NotImplementedError("Tu wstawimy prawdziwy request logowania.")
 
 def fetch_schedule(target_date):
-    raise NotImplementedError("Tu wstawimy pobieranie grafiku po poznaniu endpointu.")
+    raise NotImplementedError("Tu wstawimy pobieranie grafiku.")
+
+def book_class(class_id):
+    raise NotImplementedError("Tu wstawimy request rezerwacji.")
 
 if __name__ == "__main__":
     target_date = get_target_date(7)
     print("Cel:", target_date)
-    print("Następny krok: login() i fetch_schedule().")
+    print("Następny krok: login() -> fetch_schedule() -> book_class().")
