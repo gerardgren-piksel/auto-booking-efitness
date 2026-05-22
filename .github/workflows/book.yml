@@ -1,24 +1,32 @@
-name: eFitness auto booking
+name: Book checker
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "5 22 * * *"
+    - cron: "0 5 * * *"
 
 jobs:
-  book:
+  run:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 30
 
-      - uses: actions/setup-python@v5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          python -m playwright install --with-deps chromium
 
-      - run: python book.py
+      - name: Run script
         env:
           EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
           EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
-
+        run: python book.py
