@@ -1,48 +1,66 @@
 import os
-import requests
-from datetime import datetime, timedelta
+import re
+from datetime import date, timedelta, datetime
+from pathlib import Path
+from playwright.sync_api import sync_playwright
 
-TARGET_CLASSES = {
-    0: ["FUNCTIONAL BODYBUILDING", "18:50"],
-    1: ["CROSSFIT", "17:40"],
-    2: ["CROSSFIT ATHLETE", "17:40"],
-    3: ["GYMNASTICS", "17:40"],
-    4: ["KETTLEBELLS", "17:40"],
-    5: ["HYBRID RACE", "10:00"],
-}
+BASE_URL = "https://cf43300-cms.efitness.com.pl"
+LOGIN_URL = f"{BASE_URL}/login"
+SCHEDULE_URL = f"{BASE_URL}/kalendarz-zajec"
 
-LOGIN_URL = "PUT_LOGIN_URL_HERE"
-SCHEDULE_URL = "PUT_SCHEDULE_URL_HERE"
-BOOK_URL = "PUT_BOOK_URL_HERE"
+LOGIN = os.getenv("EFITNESS_LOGIN", "")
+PASSWORD = os.getenv("EFITNESS_PASSWORD", "")
+TARGET_CLASS = os.getenv("TARGET_CLASS", "KETTLEBELLS")
+DAYS_AHEAD = int(os.getenv("DAYS_AHEAD", "7"))
 
-login_value = os.getenv("EFITNESS_LOGIN")
-password_value = os.getenv("EFITNESS_PASSWORD")
+OUT = Path("output")
+OUT.mkdir(exist_ok=True)
+LOG_PATH = OUT / "run.log"
 
-if not login_value or not password_value:
-    raise SystemExit("Brak sekretów EFITNESS_LOGIN lub EFITNESS_PASSWORD")
+def log(msg):
+    line = f"{datetime.now().isoformat(timespec='seconds')} | {msg}"
+    print(line)
+    LOG_PATH.write_text(LOG_PATH.read_text(encoding="utf-8") + line + "\n" if LOG_PATH.exists() else line + "\n", encoding="utf-8")
 
-session = requests.Session()
+def norm(t):
+    return re.sub(r"\s+", " ", (t or "")).strip().upper()
 
-def get_target_date(days_ahead=7):
-    return (datetime.now() + timedelta(days=days_ahead)).date()
+def main():
+    target = date.today() + timedelta(days=DAYS_AHEAD)
+    log(f"Target date: {target.isoformat()}")
+    log(f"Target class: {TARGET_CLASS}")
 
-def should_book(class_name, class_time, target_dt):
-    weekday = target_dt.weekday()
-    expected = TARGET_CLASSES.get(weekday)
-    if not expected:
-        return False
-    return expected[0] == class_name.upper() and expected[1] == class_time
+    if not LOGIN or not PASSWORD:
+        raise SystemExit("Missing EFITNESS_LOGIN or EFITNESS_PASSWORD secret.")
 
-def login():
-    raise NotImplementedError("Tu wstawimy prawdziwy request logowania.")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
 
-def fetch_schedule(target_date):
-    raise NotImplementedError("Tu wstawimy pobieranie grafiku.")
+        page.goto(LOGIN_URL, wait_until="networkidle")
 
-def book_class(class_id):
-    raise NotImplementedError("Tu wstawimy request rezerwacji.")
+        inputs = page.locator("input")
+        count = inputs.count()
+        if count < 2:
+            raise SystemExit(f"Cannot find login form inputs. Found inputs: {count}")
+
+        inputs.nth(0).fill(LOGIN)
+        inputs.nth(1).fill(PASSWORD)
+
+        page.get_by_role("button", name=re.compile("zaloguj", re.I)).click()
+        page.wait_for_load_state("networkidle")
+
+        page.goto(SCHEDULE_URL, wait_until="networkidle")
+        body = page.locator("body").inner_text(timeout=5000)
+        log("Schedule page opened.")
+
+        if norm(TARGET_CLASS) in norm(body):
+            log(f"Found class text on page: {TARGET_CLASS}")
+        else:
+            log(f"Class text not found in current page text: {TARGET_CLASS}")
+
+        Path(OUT / "page_text.txt").write_text(body, encoding="utf-8")
+        browser.close()
 
 if __name__ == "__main__":
-    target_date = get_target_date(7)
-    print("Cel:", target_date)
-    print("Następny krok: login() -> fetch_schedule() -> book_class().")
+    main()
