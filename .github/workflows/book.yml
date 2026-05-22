@@ -1,1 +1,21 @@
-requests
+name: eFitness auto booking
+
+on:
+  schedule:
+    - cron: "5 22 * * *"
+  workflow_dispatch:
+
+jobs:
+  book:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python book.py
+        env:
+          EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
+          EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
+
