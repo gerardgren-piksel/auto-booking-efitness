@@ -8,10 +8,13 @@ BASE_URL = "https://cf43300-cms.efitness.com.pl"
 LOGIN_URL = f"{BASE_URL}/login"
 SCHEDULE_URL = f"{BASE_URL}/kalendarz-zajec"
 
-LOGIN = os.getenv("EFITNESS_LOGIN", "")
-PASSWORD = os.getenv("EFITNESS_PASSWORD", "")
-TARGET_CLASS = os.getenv("TARGET_CLASS", "KETTLEBELLS")
-DAYS_AHEAD = int(os.getenv("DAYS_AHEAD", "7"))
+page.goto(LOGIN_URL, wait_until="networkidle")
+Path("output").mkdir(exist_ok=True)
+Path("output/login_debug.html").write_text(page.content(), encoding="utf-8")
+Path("output/login_debug.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
+page.screenshot(path="output/login_debug.png", full_page=True)
+raise SystemExit("Debug saved")
+
 
 OUT = Path("output")
 OUT.mkdir(exist_ok=True)
