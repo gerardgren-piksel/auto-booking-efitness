@@ -45,17 +45,14 @@ def fill_login(frame, login, password):
 
 def click_login(frame):
     buttons = frame.get_by_role("button")
-    if buttons.count() > 0:
-        for i in range(buttons.count()):
-            try:
-                txt = (buttons.nth(i).inner_text() or "").strip().upper()
-            except Exception:
-                txt = ""
-            if "ZALOGUJ" in txt:
-                buttons.nth(i).click()
-                return
-        buttons.nth(0).click()
-        return
+    for i in range(buttons.count()):
+        try:
+            txt = (buttons.nth(i).inner_text() or "").strip().upper()
+        except Exception:
+            txt = ""
+        if "ZALOGUJ" in txt:
+            buttons.nth(i).click()
+            return
     frame.get_by_text("Zaloguj się", exact=False).click()
 
 def login_user(page):
@@ -67,7 +64,6 @@ def login_user(page):
         page.wait_for_timeout(500)
     if not frame:
         raise SystemExit("Login frame not found.")
-    log(f"Found login frame: {frame.url}")
     fill_login(frame, LOGIN, PASSWORD)
     save_debug(page, "04_filled_login")
     click_login(frame)
@@ -78,51 +74,57 @@ def goto_schedule(page):
     page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
     save_debug(page, "06_schedule_before_next")
 
-def next_visible_button(page):
+def current_range(page):
+    txt = page.locator("body").inner_text(timeout=5000)
+    m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
+    return m.group(0) if m else None
+
+def click_next_week_button(page):
     locators = [
-        page.locator("button:visible"),
-        page.locator("a:visible"),
-        page.locator("div:visible"),
-        page.locator("span:visible"),
+        page.get_by_role("button", name=re.compile(r"(następ|next|›|→)", re.I)),
+        page.get_by_role("link", name=re.compile(r"(następ|next|›|→)", re.I)),
+        page.locator("button").filter(has_text=re.compile(r"(następ|next|›|→)", re.I)),
+        page.locator("a").filter(has_text=re.compile(r"(następ|next|›|→)", re.I)),
     ]
     for loc in locators:
         try:
-            c = loc.count()
-            for i in range(min(c, 80)):
-                try:
-                    txt = (loc.nth(i).inner_text() or "").strip()
-                except Exception:
-                    txt = ""
-                if any(k in norm(txt) for k in ["→", "›", "NASTĘP", "NEXT"]):
-                    return loc.nth(i)
+            if loc.count() > 0:
+                loc.first.click()
+                return True
         except Exception:
-            pass
-    return None
+            continue
+    buttons = page.locator("button:visible")
+    for i in range(min(buttons.count(), 120)):
+        b = buttons.nth(i)
+        try:
+            attrs = " ".join([
+                b.get_attribute("aria-label") or "",
+                b.get_attribute("title") or "",
+                b.inner_text() or "",
+            ])
+        except Exception:
+            attrs = ""
+        if any(x in norm(attrs) for x in ["NASTĘP", "NEXT", "›", "→"]):
+            try:
+                b.click()
+            except Exception:
+                b.click(force=True)
+            return True
+    return False
 
 def go_next_week(page):
-    before = page.locator("body").inner_text(timeout=5000)
-    target_range = None
-    m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", before)
-    if m:
-        target_range = m.group(0)
-
-    for _ in range(8):
-        btn = next_visible_button(page)
-        if not btn:
+    before = current_range(page)
+    log(f"Range before: {before}")
+    for _ in range(5):
+        if not click_next_week_button(page):
             log("Next week button not found.")
             return False
-        try:
-            btn.click()
-        except Exception:
-            try:
-                btn.click(force=True)
-            except Exception:
-                return False
-        page.wait_for_timeout(1800)
-        after = page.locator("body").inner_text(timeout=5000)
-        if target_range and target_range not in after:
+        page.wait_for_timeout(2000)
+        after = current_range(page)
+        log(f"Range after click: {after}")
+        if before and after and after != before:
             return True
-        if not target_range and before != after:
+        if not before and after:
             return True
     return False
 
@@ -137,8 +139,7 @@ def click_booking_for_class(page, target_class):
             if container.count() == 0:
                 continue
             row = container.first
-            txt = row.inner_text(timeout=3000)
-            if target_class.upper() not in norm(txt):
+            if target_class.upper() not in norm(row.inner_text(timeout=3000)):
                 continue
             for patt in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]:
                 btn = row.get_by_role("button", name=re.compile(patt, re.I))
@@ -148,15 +149,6 @@ def click_booking_for_class(page, target_class):
                 link = row.get_by_role("link", name=re.compile(patt, re.I))
                 if link.count() > 0:
                     link.first.click()
-                    return True
-            controls = row.locator("button, a")
-            for i in range(controls.count()):
-                try:
-                    t = (controls.nth(i).inner_text() or "").strip().upper()
-                except Exception:
-                    t = ""
-                if any(x in t for x in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]):
-                    controls.nth(i).click()
                     return True
         except Exception:
             pass
@@ -180,24 +172,20 @@ def main():
         login_user(page)
 
         goto_schedule(page)
-        if go_next_week(page):
-            log("Moved to next week.")
-        else:
-            log("Could not confirm next week navigation.")
-        save_debug(page, "07_schedule_next_week")
+        moved = go_next_week(page)
+        log(f"Moved next week: {moved}")
+        save_debug(page, "07_schedule_after_next")
 
-        body = page.locator("body").inner_text(timeout=5000)
-        if norm(TARGET_CLASS) in norm(body):
-            log(f"Class text found on next week page: {TARGET_CLASS}")
+        if TARGET_CLASS.upper() in norm(page.locator("body").inner_text(timeout=5000)):
             if click_booking_for_class(page, TARGET_CLASS):
                 log("Clicked booking element.")
                 page.wait_for_timeout(3000)
                 save_debug(page, "08_after_booking_click")
             else:
-                log("Could not find booking button in the row.")
+                log("Booking element not found.")
                 save_debug(page, "08_no_booking_button")
         else:
-            log(f"Class text not found on next week page: {TARGET_CLASS}")
+            log("Target class not found on current page.")
             save_debug(page, "08_class_not_found")
 
         browser.close()
