@@ -35,3 +35,11 @@ jobs:
           DAYS_AHEAD: "7"
         run: |
           python book.py
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: efitness-debug
+          path: output/
+          if-no-files-found: warn
