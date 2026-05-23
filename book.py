@@ -80,66 +80,46 @@ def goto_schedule(page):
     save_debug(page, "06_schedule_before_next")
 
 def click_next_week_button(page):
-    selectors = [
-        "header button:visible",
-        "nav button:visible",
-        "div[role='toolbar'] button:visible",
-        "button[aria-label]:visible",
-        "button[title]:visible",
+    locs = [
+        page.get_by_role("button"),
+        page.get_by_role("link"),
+        page.locator("button:visible"),
+        page.locator("a:visible"),
     ]
-    for sel in selectors:
-        loc = page.locator(sel)
+    for loc in locs:
         try:
-            count = min(loc.count(), 30)
+            count = min(loc.count(), 120)
         except Exception:
             continue
         for i in range(count):
-            b = loc.nth(i)
+            el = loc.nth(i)
             try:
                 attrs = " ".join([
-                    b.get_attribute("aria-label") or "",
-                    b.get_attribute("title") or "",
-                    b.inner_text() or "",
+                    el.get_attribute("aria-label") or "",
+                    el.get_attribute("title") or "",
+                    el.inner_text() or "",
+                    el.get_attribute("class") or "",
                 ])
             except Exception:
                 attrs = ""
-            if any(x in norm(attrs) for x in ["NASTĘP", "NEXT", "›", "→"]):
+            n = norm(attrs)
+            if any(k in n for k in ["NASTĘP", "NEXT", "›", "→", "PRZÓD", "RIGHT"]):
                 try:
-                    b.click()
+                    el.click(force=True)
                 except Exception:
-                    b.click(force=True)
+                    try:
+                        el.click()
+                    except Exception:
+                        pass
                 return True
-
-    buttons = page.locator("button:visible")
-    try:
-        count = min(buttons.count(), 80)
-    except Exception:
-        return False
-
-    for i in range(count):
-        b = buttons.nth(i)
-        try:
-            attrs = " ".join([
-                b.get_attribute("aria-label") or "",
-                b.get_attribute("title") or "",
-                b.inner_text() or "",
-            ])
-        except Exception:
-            attrs = ""
-        if any(x in norm(attrs) for x in ["NASTĘP", "NEXT", "›", "→"]):
-            try:
-                b.click(force=True)
-            except Exception:
-                b.click()
-            return True
     return False
 
 def go_next_week(page):
     before = current_range(page)
     log(f"Range before: {before}")
-    for _ in range(8):
+    for _ in range(10):
         if not click_next_week_button(page):
-            log("Next week button not found.")
+            log("Next button not found.")
             return False
         page.wait_for_timeout(2500)
         after = current_range(page)
