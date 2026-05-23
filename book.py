@@ -74,25 +74,56 @@ def login_user(page):
     page.wait_for_timeout(3000)
     save_debug(page, "05_after_login")
 
-def go_next_week(page):
-    before = page.locator("body").inner_text(timeout=5000)
-    arrows = [
-        page.get_by_text("→", exact=True),
-        page.get_by_text("›", exact=True),
-        page.get_by_role("link", name=re.compile("następ", re.I)),
-        page.get_by_role("button", name=re.compile("następ", re.I)),
-        page.locator("a, button").filter(has_text="→"),
+def goto_schedule(page):
+    page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
+    save_debug(page, "06_schedule_before_next")
+
+def next_visible_button(page):
+    locators = [
+        page.locator("button:visible"),
+        page.locator("a:visible"),
+        page.locator("div:visible"),
+        page.locator("span:visible"),
     ]
-    for a in arrows:
+    for loc in locators:
         try:
-            if a.count() > 0:
-                a.first.click()
-                page.wait_for_timeout(2500)
-                after = page.locator("body").inner_text(timeout=5000)
-                if before != after:
-                    return True
+            c = loc.count()
+            for i in range(min(c, 80)):
+                try:
+                    txt = (loc.nth(i).inner_text() or "").strip()
+                except Exception:
+                    txt = ""
+                if any(k in norm(txt) for k in ["→", "›", "NASTĘP", "NEXT"]):
+                    return loc.nth(i)
         except Exception:
             pass
+    return None
+
+def go_next_week(page):
+    before = page.locator("body").inner_text(timeout=5000)
+    target_range = None
+    m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", before)
+    if m:
+        target_range = m.group(0)
+
+    for _ in range(8):
+        btn = next_visible_button(page)
+        if not btn:
+            log("Next week button not found.")
+            return False
+        try:
+            btn.click()
+        except Exception:
+            try:
+                btn.click(force=True)
+            except Exception:
+                return False
+        page.wait_for_timeout(1800)
+        after = page.locator("body").inner_text(timeout=5000)
+        if target_range and target_range not in after:
+            return True
+        if not target_range and before != after:
+            return True
     return False
 
 def click_booking_for_class(page, target_class):
@@ -148,14 +179,11 @@ def main():
         page.wait_for_timeout(2000)
         login_user(page)
 
-        page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
-        save_debug(page, "06_schedule_before_next")
-
+        goto_schedule(page)
         if go_next_week(page):
             log("Moved to next week.")
         else:
             log("Could not confirm next week navigation.")
-
         save_debug(page, "07_schedule_next_week")
 
         body = page.locator("body").inner_text(timeout=5000)
