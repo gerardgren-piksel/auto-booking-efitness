@@ -89,17 +89,40 @@ def get_next_week_href(page):
     if weekchooser.count() == 0:
         return None
 
-    candidates = [
-        weekchooser.locator("a.right"),
-        weekchooser.locator("a[title='Dalej']"),
-        weekchooser.locator("a[href*='day=']"),
-    ]
-
-    for loc in candidates:
-        if loc.count() > 0:
-            href = loc.first.get_attribute("href")
+    try:
+        direct_dalej = weekchooser.locator("> a[title='Dalej']")
+        if direct_dalej.count() > 0:
+            href = direct_dalej.first.get_attribute("href")
             if href:
                 return href
+    except Exception:
+        pass
+
+    try:
+        direct_links = weekchooser.locator("> a")
+        if direct_links.count() >= 2:
+            href = direct_links.nth(1).get_attribute("href")
+            if href:
+                return href
+    except Exception:
+        pass
+
+    try:
+        all_links = weekchooser.locator("a")
+        for i in range(all_links.count()):
+            a = all_links.nth(i)
+            title = (a.get_attribute("title") or "").strip()
+            href = a.get_attribute("href") or ""
+            if title == "Dalej" and href:
+                return href
+        for i in range(all_links.count()):
+            a = all_links.nth(i)
+            href = a.get_attribute("href") or ""
+            if "day=" in href:
+                return href
+    except Exception:
+        pass
+
     return None
 
 def go_next_week(page):
