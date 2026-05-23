@@ -2,9 +2,10 @@ import os
 import re
 from datetime import date, timedelta, datetime
 from pathlib import Path
+from urllib.parse import urljoin
 from playwright.sync_api import sync_playwright
 
-BASE_URL = "https://cf43300-cms.efitness.com.pl"
+BASE_URL = "https://cf43300-cms.efitness.com.pl/"
 LOGIN_URL = BASE_URL
 
 LOGIN = os.getenv("EFITNESS_LOGIN", "")
@@ -18,7 +19,7 @@ LOG_PATH = OUT / "run.log"
 
 def log(msg):
     line = f"{datetime.now().isoformat(timespec='seconds')} | {msg}"
-    print(line)
+    print(line, flush=True)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
@@ -31,12 +32,14 @@ def save_debug(page, prefix):
     page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
 
 def current_range(page):
-    try:
-        return page.locator("div.weekchooser span").first.inner_text(timeout=5000).strip()
-    except Exception:
-        txt = page.locator("body").inner_text(timeout=5000)
-        m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
-        return m.group(0) if m else None
+    txt = page.locator("body").inner_text(timeout=5000)
+    m = re.search(r"(\d{4}-\d{2}-\d{2})\s+do\s+(\d{4}-\d{2}-\d{2})", txt)
+    if not m:
+        return None, None, None
+    raw = m.group(0)
+    start = date.fromisoformat(m.group(1))
+    end = date.fromisoformat(m.group(2))
+    return raw, start, end
 
 def find_login_frame(page):
     for frame in page.frames:
@@ -79,71 +82,64 @@ def login_user(page):
     save_debug(page, "05_after_login")
 
 def goto_schedule(page):
-    page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="domcontentloaded")
+    page.goto(urljoin(BASE_URL, "kalendarz-zajec"), wait_until="domcontentloaded")
     page.wait_for_timeout(2500)
     save_debug(page, "06_schedule_before_next")
 
-def get_weekchooser_links(page):
-    return page.evaluate("""
-() => {
-  const box = document.querySelector('div.weekchooser');
-  if (!box) return null;
-  const links = Array.from(box.querySelectorAll('a')).map((a, idx) => ({
-    idx,
-    href: a.getAttribute('href'),
-    title: a.getAttribute('title'),
-    text: (a.textContent || '').trim(),
-    className: a.className || ''
-  }));
-  const label = (box.querySelector('span')?.textContent || '').trim();
-  return { label, links };
-}
-""")
+def extract_all_day_links(page):
+    links = page.locator("a[href*='day=']")
+    data = []
+    count = links.count()
+    for i in range(count):
+        a = links.nth(i)
+        try:
+            href = a.get_attribute("href") or ""
+            title = a.get_attribute("title") or ""
+            text = (a.inner_text() or "").strip()
+        except Exception:
+            continue
+        data.append({"href": href, "title": title, "text": text})
+    return data
 
-def get_next_week_href(page):
-    data = get_weekchooser_links(page)
-    log(f"Weekchooser  {data}")
+def get_next_week_href(page, target_day):
+    links = extract_all_day_links(page)
+    log(f"All day links: {links}")
 
-    if not data or not data.get("links"):
-        return None
-
-    for link in data["links"]:
-        if (link.get("title") or "").strip() == "Dalej" and link.get("href"):
-            return link["href"]
-
-    if len(data["links"]) >= 2 and data["links"][1].get("href"):
-        return data["links"][1]["href"]
-
-    for link in data["links"]:
-        href = link.get("href") or ""
-        if "day=" in href:
+    target_s = target_day.isoformat()
+    for item in links:
+        href = item["href"]
+        if f"day={target_s}" in href:
             return href
 
     return None
 
 def go_next_week(page):
-    before = current_range(page)
-    log(f"Range before: {before}")
+    raw_before, start_before, end_before = current_range(page)
+    log(f"Range before: {raw_before}")
 
-    href = get_next_week_href(page)
+    if not end_before:
+        save_debug(page, "07_no_range_found")
+        raise SystemExit("Could not parse current week range")
+
+    target_day = end_before + timedelta(days=6)
+    log(f"Expected next week link day=: {target_day.isoformat()}")
+
+    href = get_next_week_href(page, target_day)
     log(f"Week next href found: {href}")
 
     if not href:
         save_debug(page, "07_next_link_not_found")
-        raise SystemExit("Week next link not found in div.weekchooser")
+        raise SystemExit("Week next href not found from day links")
 
-    absolute_url = href if href.startswith("http") else f"{BASE_URL}/{href.lstrip('/')}"
+    absolute_url = urljoin(BASE_URL, href)
     log(f"Going directly to week URL: {absolute_url}")
-
     page.goto(absolute_url, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)
 
-    after = current_range(page)
-    log(f"Range after goto: {after}")
+    raw_after, _, _ = current_range(page)
+    log(f"Range after goto: {raw_after}")
 
-    if before and after and before != after:
-        return True
-    return False
+    return raw_before != raw_after
 
 def open_class_details(page, target_class):
     cards = page.locator(".event")
