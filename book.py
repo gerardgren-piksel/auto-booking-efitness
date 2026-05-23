@@ -31,13 +31,12 @@ def save_debug(page, prefix):
     page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
 
 def current_range(page):
-    week = page.locator("div.weekchooser span")
-    if week.count() > 0:
-        return week.first.inner_text(timeout=5000).strip()
-
-    txt = page.locator("body").inner_text(timeout=5000)
-    m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
-    return m.group(0) if m else None
+    try:
+        return page.locator("div.weekchooser span").first.inner_text(timeout=5000).strip()
+    except Exception:
+        txt = page.locator("body").inner_text(timeout=5000)
+        m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
+        return m.group(0) if m else None
 
 def find_login_frame(page):
     for frame in page.frames:
@@ -84,44 +83,41 @@ def goto_schedule(page):
     page.wait_for_timeout(2500)
     save_debug(page, "06_schedule_before_next")
 
+def get_weekchooser_links(page):
+    return page.evaluate("""
+() => {
+  const box = document.querySelector('div.weekchooser');
+  if (!box) return null;
+  const links = Array.from(box.querySelectorAll('a')).map((a, idx) => ({
+    idx,
+    href: a.getAttribute('href'),
+    title: a.getAttribute('title'),
+    text: (a.textContent || '').trim(),
+    className: a.className || ''
+  }));
+  const label = (box.querySelector('span')?.textContent || '').trim();
+  return { label, links };
+}
+""")
+
 def get_next_week_href(page):
-    weekchooser = page.locator("div.weekchooser")
-    if weekchooser.count() == 0:
+    data = get_weekchooser_links(page)
+    log(f"Weekchooser  {data}")
+
+    if not data or not data.get("links"):
         return None
 
-    try:
-        direct_dalej = weekchooser.locator("> a[title='Dalej']")
-        if direct_dalej.count() > 0:
-            href = direct_dalej.first.get_attribute("href")
-            if href:
-                return href
-    except Exception:
-        pass
+    for link in data["links"]:
+        if (link.get("title") or "").strip() == "Dalej" and link.get("href"):
+            return link["href"]
 
-    try:
-        direct_links = weekchooser.locator("> a")
-        if direct_links.count() >= 2:
-            href = direct_links.nth(1).get_attribute("href")
-            if href:
-                return href
-    except Exception:
-        pass
+    if len(data["links"]) >= 2 and data["links"][1].get("href"):
+        return data["links"][1]["href"]
 
-    try:
-        all_links = weekchooser.locator("a")
-        for i in range(all_links.count()):
-            a = all_links.nth(i)
-            title = (a.get_attribute("title") or "").strip()
-            href = a.get_attribute("href") or ""
-            if title == "Dalej" and href:
-                return href
-        for i in range(all_links.count()):
-            a = all_links.nth(i)
-            href = a.get_attribute("href") or ""
-            if "day=" in href:
-                return href
-    except Exception:
-        pass
+    for link in data["links"]:
+        href = link.get("href") or ""
+        if "day=" in href:
+            return href
 
     return None
 
