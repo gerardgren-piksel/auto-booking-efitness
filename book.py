@@ -30,6 +30,11 @@ def save_debug(page, prefix):
     (OUT / f"{prefix}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
     page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
 
+def current_range(page):
+    txt = page.locator("body").inner_text(timeout=5000)
+    m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
+    return m.group(0) if m else None
+
 def find_login_frame(page):
     for frame in page.frames:
         if "Login/SystemLogin" in frame.url:
@@ -74,27 +79,44 @@ def goto_schedule(page):
     page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
     save_debug(page, "06_schedule_before_next")
 
-def current_range(page):
-    txt = page.locator("body").inner_text(timeout=5000)
-    m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
-    return m.group(0) if m else None
-
 def click_next_week_button(page):
-    locators = [
-        page.get_by_role("button", name=re.compile(r"(następ|next|›|→)", re.I)),
-        page.get_by_role("link", name=re.compile(r"(następ|next|›|→)", re.I)),
-        page.locator("button").filter(has_text=re.compile(r"(następ|next|›|→)", re.I)),
-        page.locator("a").filter(has_text=re.compile(r"(następ|next|›|→)", re.I)),
+    selectors = [
+        "header button:visible",
+        "nav button:visible",
+        "div[role='toolbar'] button:visible",
+        "button[aria-label]:visible",
+        "button[title]:visible",
     ]
-    for loc in locators:
+    for sel in selectors:
+        loc = page.locator(sel)
         try:
-            if loc.count() > 0:
-                loc.first.click()
-                return True
+            count = min(loc.count(), 30)
         except Exception:
             continue
+        for i in range(count):
+            b = loc.nth(i)
+            try:
+                attrs = " ".join([
+                    b.get_attribute("aria-label") or "",
+                    b.get_attribute("title") or "",
+                    b.inner_text() or "",
+                ])
+            except Exception:
+                attrs = ""
+            if any(x in norm(attrs) for x in ["NASTĘP", "NEXT", "›", "→"]):
+                try:
+                    b.click()
+                except Exception:
+                    b.click(force=True)
+                return True
+
     buttons = page.locator("button:visible")
-    for i in range(min(buttons.count(), 120)):
+    try:
+        count = min(buttons.count(), 80)
+    except Exception:
+        return False
+
+    for i in range(count):
         b = buttons.nth(i)
         try:
             attrs = " ".join([
@@ -106,20 +128,20 @@ def click_next_week_button(page):
             attrs = ""
         if any(x in norm(attrs) for x in ["NASTĘP", "NEXT", "›", "→"]):
             try:
-                b.click()
-            except Exception:
                 b.click(force=True)
+            except Exception:
+                b.click()
             return True
     return False
 
 def go_next_week(page):
     before = current_range(page)
     log(f"Range before: {before}")
-    for _ in range(5):
+    for _ in range(8):
         if not click_next_week_button(page):
             log("Next week button not found.")
             return False
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(2500)
         after = current_range(page)
         log(f"Range after click: {after}")
         if before and after and after != before:
@@ -150,6 +172,15 @@ def click_booking_for_class(page, target_class):
                 if link.count() > 0:
                     link.first.click()
                     return True
+            controls = row.locator("button, a")
+            for i in range(controls.count()):
+                try:
+                    t = (controls.nth(i).inner_text() or "").strip().upper()
+                except Exception:
+                    t = ""
+                if any(x in t for x in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]):
+                    controls.nth(i).click()
+                    return True
         except Exception:
             pass
     return False
@@ -172,11 +203,13 @@ def main():
         login_user(page)
 
         goto_schedule(page)
+
         moved = go_next_week(page)
         log(f"Moved next week: {moved}")
         save_debug(page, "07_schedule_after_next")
 
-        if TARGET_CLASS.upper() in norm(page.locator("body").inner_text(timeout=5000)):
+        body = page.locator("body").inner_text(timeout=5000)
+        if TARGET_CLASS.upper() in norm(body):
             if click_booking_for_class(page, TARGET_CLASS):
                 log("Clicked booking element.")
                 page.wait_for_timeout(3000)
