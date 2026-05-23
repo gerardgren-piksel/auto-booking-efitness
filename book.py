@@ -76,7 +76,7 @@ def main():
         page.wait_for_timeout(3000)
         save_debug(page, "05_after_login")
 
-        page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
+                page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
         save_debug(page, "06_schedule")
 
         body = page.locator("body").inner_text(timeout=5000)
@@ -91,3 +91,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
