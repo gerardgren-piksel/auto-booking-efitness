@@ -74,6 +74,27 @@ def login_user(page):
     page.wait_for_timeout(3000)
     save_debug(page, "05_after_login")
 
+def go_next_week(page):
+    before = page.locator("body").inner_text(timeout=5000)
+    arrows = [
+        page.get_by_text("→", exact=True),
+        page.get_by_text("›", exact=True),
+        page.get_by_role("link", name=re.compile("następ", re.I)),
+        page.get_by_role("button", name=re.compile("następ", re.I)),
+        page.locator("a, button").filter(has_text="→"),
+    ]
+    for a in arrows:
+        try:
+            if a.count() > 0:
+                a.first.click()
+                page.wait_for_timeout(2500)
+                after = page.locator("body").inner_text(timeout=5000)
+                if before != after:
+                    return True
+        except Exception:
+            pass
+    return False
+
 def click_booking_for_class(page, target_class):
     candidates = [
         page.locator(f"tr:has-text('{target_class}')"),
@@ -88,7 +109,6 @@ def click_booking_for_class(page, target_class):
             txt = row.inner_text(timeout=3000)
             if target_class.upper() not in norm(txt):
                 continue
-
             for patt in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]:
                 btn = row.get_by_role("button", name=re.compile(patt, re.I))
                 if btn.count() > 0:
@@ -98,7 +118,6 @@ def click_booking_for_class(page, target_class):
                 if link.count() > 0:
                     link.first.click()
                     return True
-
             controls = row.locator("button, a")
             for i in range(controls.count()):
                 try:
@@ -130,21 +149,28 @@ def main():
         login_user(page)
 
         page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
-        save_debug(page, "06_schedule")
+        save_debug(page, "06_schedule_before_next")
+
+        if go_next_week(page):
+            log("Moved to next week.")
+        else:
+            log("Could not confirm next week navigation.")
+
+        save_debug(page, "07_schedule_next_week")
 
         body = page.locator("body").inner_text(timeout=5000)
         if norm(TARGET_CLASS) in norm(body):
-            log(f"Class text found on page: {TARGET_CLASS}")
+            log(f"Class text found on next week page: {TARGET_CLASS}")
             if click_booking_for_class(page, TARGET_CLASS):
                 log("Clicked booking element.")
                 page.wait_for_timeout(3000)
-                save_debug(page, "07_after_booking_click")
+                save_debug(page, "08_after_booking_click")
             else:
                 log("Could not find booking button in the row.")
-                save_debug(page, "07_no_booking_button")
+                save_debug(page, "08_no_booking_button")
         else:
-            log(f"Class text not found in current page text: {TARGET_CLASS}")
-            save_debug(page, "07_class_not_found")
+            log(f"Class text not found on next week page: {TARGET_CLASS}")
+            save_debug(page, "08_class_not_found")
 
         browser.close()
 
