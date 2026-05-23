@@ -30,7 +30,7 @@ def save_debug(page, prefix):
     (OUT / f"{prefix}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
     page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
 
-def fill_login_in_context(ctx):
+def try_fill(ctx):
     try:
         ctx.get_by_label("Login").fill(LOGIN)
         ctx.get_by_label("Hasło").fill(PASSWORD)
@@ -58,18 +58,22 @@ def main():
         page.wait_for_timeout(1500)
         save_debug(page, "02_after_click")
 
-        if fill_login_in_context(page):
+        if try_fill(page):
             log("Filled login in main page")
         else:
+            filled = False
             for i, frame in enumerate(page.frames):
                 try:
-                    if frame.get_by_label("Login").count() > 0 or frame.get_by_text("Login").count() > 0:
+                    if frame.get_by_label("Login").count() > 0 or "Login" in frame.locator("body").inner_text(timeout=1000):
                         log(f"Trying frame {i}: {frame.url}")
-                        if fill_login_in_context(frame):
+                        if try_fill(frame):
                             log(f"Filled login in frame {i}")
+                            filled = True
                             break
                 except Exception:
                     pass
+            if not filled:
+                raise SystemExit("Could not find login form in page or frames.")
 
         page.wait_for_timeout(2000)
         save_debug(page, "03_after_login")
