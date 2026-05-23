@@ -31,9 +31,13 @@ def save_debug(page, prefix):
     page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
 
 def current_range(page):
-    txt = page.locator("body").inner_text(timeout=5000)
-    m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
-    return m.group(0) if m else None
+    try:
+        txt = page.locator(".weekchooser span").inner_text(timeout=5000)
+        return txt.strip()
+    except Exception:
+        txt = page.locator("body").inner_text(timeout=5000)
+        m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
+        return m.group(0) if m else None
 
 def find_login_frame(page):
     for frame in page.frames:
@@ -76,93 +80,105 @@ def login_user(page):
     save_debug(page, "05_after_login")
 
 def goto_schedule(page):
-    page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
+    page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="domcontentloaded")
+    page.wait_for_timeout(2500)
     save_debug(page, "06_schedule_before_next")
-
-def click_next_week_button(page):
-    locs = [
-        page.get_by_role("button"),
-        page.get_by_role("link"),
-        page.locator("button:visible"),
-        page.locator("a:visible"),
-    ]
-    for loc in locs:
-        try:
-            count = min(loc.count(), 120)
-        except Exception:
-            continue
-        for i in range(count):
-            el = loc.nth(i)
-            try:
-                attrs = " ".join([
-                    el.get_attribute("aria-label") or "",
-                    el.get_attribute("title") or "",
-                    el.inner_text() or "",
-                    el.get_attribute("class") or "",
-                ])
-            except Exception:
-                attrs = ""
-            n = norm(attrs)
-            if any(k in n for k in ["NASTĘP", "NEXT", "›", "→", "PRZÓD", "RIGHT"]):
-                try:
-                    el.click(force=True)
-                except Exception:
-                    try:
-                        el.click()
-                    except Exception:
-                        pass
-                return True
-    return False
 
 def go_next_week(page):
     before = current_range(page)
     log(f"Range before: {before}")
-    for _ in range(10):
-        if not click_next_week_button(page):
-            log("Next button not found.")
-            return False
-        page.wait_for_timeout(2500)
+
+    next_link = page.locator(".weekchooser a.classright")
+    if next_link.count() == 0:
+        raise SystemExit("Next week link not found: .weekchooser a.classright")
+
+    href = next_link.first.get_attribute("href")
+    title = next_link.first.get_attribute("title")
+    log(f"Next week href: {href}")
+    log(f"Next week title: {title}")
+
+    next_link.first.click()
+    page.wait_for_timeout(3000)
+    page.wait_for_load_state("domcontentloaded")
+
+    after = current_range(page)
+    log(f"Range after click: {after}")
+
+    if before and after and before != after:
+        return True
+
+    if href:
+        absolute_url = href if href.startswith("http") else f"{BASE_URL}/{href.lstrip('/')}"
+        log(f"Direct goto fallback: {absolute_url}")
+        page.goto(absolute_url, wait_until="domcontentloaded")
+        page.wait_for_timeout(3000)
         after = current_range(page)
-        log(f"Range after click: {after}")
-        if before and after and after != before:
+        log(f"Range after goto: {after}")
+        if before and after and before != after:
             return True
-        if not before and after:
-            return True
+
     return False
 
-def click_booking_for_class(page, target_class):
-    candidates = [
-        page.locator(f"tr:has-text('{target_class}')"),
-        page.locator(f"div:has-text('{target_class}')"),
-        page.locator(f"td:has-text('{target_class}')"),
-    ]
-    for container in candidates:
+def open_class_details(page, target_class):
+    cards = page.locator(".event")
+    count = cards.count()
+
+    for i in range(count):
+        card = cards.nth(i)
         try:
-            if container.count() == 0:
-                continue
-            row = container.first
-            if target_class.upper() not in norm(row.inner_text(timeout=3000)):
-                continue
-            for patt in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]:
-                btn = row.get_by_role("button", name=re.compile(patt, re.I))
+            name = card.locator(".eventname").inner_text(timeout=2000).strip()
+        except Exception:
+            continue
+
+        if norm(name) != norm(target_class):
+            continue
+
+        try:
+            card.scroll_into_view_if_needed()
+        except Exception:
+            pass
+
+        try:
+            card.click()
+            return True
+        except Exception:
+            try:
+                card.click(force=True)
+                return True
+            except Exception:
+                pass
+
+    return False
+
+def click_booking_in_overlay(page):
+    patterns = [
+        r"ZAPISZ",
+        r"REZERW",
+        r"DOŁĄCZ",
+        r"BOOK",
+        r"SIGN UP",
+    ]
+
+    scopes = [
+        page.locator("#OverlayEventContent"),
+        page.locator(".popupwindow"),
+        page.locator("body"),
+    ]
+
+    for scope in scopes:
+        try:
+            for patt in patterns:
+                btn = scope.get_by_role("button", name=re.compile(patt, re.I))
                 if btn.count() > 0:
                     btn.first.click()
                     return True
-                link = row.get_by_role("link", name=re.compile(patt, re.I))
+                link = scope.get_by_role("link", name=re.compile(patt, re.I))
                 if link.count() > 0:
                     link.first.click()
                     return True
-            controls = row.locator("button, a")
-            for i in range(controls.count()):
-                try:
-                    t = (controls.nth(i).inner_text() or "").strip().upper()
-                except Exception:
-                    t = ""
-                if any(x in t for x in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]):
-                    controls.nth(i).click()
-                    return True
         except Exception:
             pass
+
     return False
 
 def main():
@@ -175,9 +191,9 @@ def main():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1200})
+        page = browser.new_page(viewport={"width": 1440, "height": 2200})
 
-        page.goto(LOGIN_URL, wait_until="networkidle")
+        page.goto(LOGIN_URL, wait_until="domcontentloaded")
         page.get_by_text("Zaloguj się", exact=False).click()
         page.wait_for_timeout(2000)
         login_user(page)
@@ -189,16 +205,19 @@ def main():
         save_debug(page, "07_schedule_after_next")
 
         body = page.locator("body").inner_text(timeout=5000)
-        if TARGET_CLASS.upper() in norm(body):
-            if click_booking_for_class(page, TARGET_CLASS):
-                log("Clicked booking element.")
-                page.wait_for_timeout(3000)
-                save_debug(page, "08_after_booking_click")
-            else:
-                log("Booking element not found.")
-                save_debug(page, "08_no_booking_button")
+        if norm(TARGET_CLASS) in norm(body):
+            log(f"Found class text after moving week: {TARGET_CLASS}")
+            opened = open_class_details(page, TARGET_CLASS)
+            log(f"Opened class details: {opened}")
+            page.wait_for_timeout(2500)
+            save_debug(page, "08_after_class_open")
+
+            booked = click_booking_in_overlay(page)
+            log(f"Clicked booking control: {booked}")
+            page.wait_for_timeout(2500)
+            save_debug(page, "09_after_booking_click")
         else:
-            log("Target class not found on current page.")
+            log(f"Target class not found after moving week: {TARGET_CLASS}")
             save_debug(page, "08_class_not_found")
 
         browser.close()
