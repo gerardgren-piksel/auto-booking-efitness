@@ -32,8 +32,7 @@ def save_debug(page, prefix):
 
 def current_range(page):
     try:
-        txt = page.locator(".weekchooser span").inner_text(timeout=5000)
-        return txt.strip()
+        return page.locator(".weekchooser span").inner_text(timeout=5000).strip()
     except Exception:
         txt = page.locator("body").inner_text(timeout=5000)
         m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
@@ -84,39 +83,43 @@ def goto_schedule(page):
     page.wait_for_timeout(2500)
     save_debug(page, "06_schedule_before_next")
 
+def get_next_week_href(page):
+    selectors = [
+        ".weekchooser a.right",
+        ".weekchooser a[title='Dalej']",
+        ".weekchooser a[href*='kalendarz-zajec?day=']",
+    ]
+
+    for sel in selectors:
+        loc = page.locator(sel)
+        if loc.count() > 0:
+            href = loc.first.get_attribute("href")
+            if href:
+                return href
+    return None
+
 def go_next_week(page):
     before = current_range(page)
     log(f"Range before: {before}")
 
-    next_link = page.locator(".weekchooser a.classright")
-    if next_link.count() == 0:
-        raise SystemExit("Next week link not found: .weekchooser a.classright")
+    href = get_next_week_href(page)
+    log(f"Next week href found: {href}")
 
-    href = next_link.first.get_attribute("href")
-    title = next_link.first.get_attribute("title")
-    log(f"Next week href: {href}")
-    log(f"Next week title: {title}")
+    if not href:
+        save_debug(page, "07_next_link_not_found")
+        raise SystemExit("Next week link not found in .weekchooser")
 
-    next_link.first.click()
+    absolute_url = href if href.startswith("http") else f"{BASE_URL}/{href.lstrip('/')}"
+    log(f"Going directly to: {absolute_url}")
+
+    page.goto(absolute_url, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)
-    page.wait_for_load_state("domcontentloaded")
 
     after = current_range(page)
-    log(f"Range after click: {after}")
+    log(f"Range after goto: {after}")
 
     if before and after and before != after:
         return True
-
-    if href:
-        absolute_url = href if href.startswith("http") else f"{BASE_URL}/{href.lstrip('/')}"
-        log(f"Direct goto fallback: {absolute_url}")
-        page.goto(absolute_url, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
-        after = current_range(page)
-        log(f"Range after goto: {after}")
-        if before and after and before != after:
-            return True
-
     return False
 
 def open_class_details(page, target_class):
@@ -139,46 +142,30 @@ def open_class_details(page, target_class):
             pass
 
         try:
-            card.click()
+            card.click(force=True)
             return True
         except Exception:
-            try:
-                card.click(force=True)
-                return True
-            except Exception:
-                pass
+            pass
 
     return False
 
 def click_booking_in_overlay(page):
-    patterns = [
-        r"ZAPISZ",
-        r"REZERW",
-        r"DOŁĄCZ",
-        r"BOOK",
-        r"SIGN UP",
-    ]
-
-    scopes = [
-        page.locator("#OverlayEventContent"),
-        page.locator(".popupwindow"),
-        page.locator("body"),
-    ]
+    patterns = [r"ZAPISZ", r"REZERW", r"DOŁĄCZ", r"BOOK", r"SIGN UP"]
+    scopes = [page.locator("#OverlayEventContent"), page.locator(".popupwindow"), page.locator("body")]
 
     for scope in scopes:
-        try:
-            for patt in patterns:
+        for patt in patterns:
+            try:
                 btn = scope.get_by_role("button", name=re.compile(patt, re.I))
                 if btn.count() > 0:
-                    btn.first.click()
+                    btn.first.click(force=True)
                     return True
                 link = scope.get_by_role("link", name=re.compile(patt, re.I))
                 if link.count() > 0:
-                    link.first.click()
+                    link.first.click(force=True)
                     return True
-        except Exception:
-            pass
-
+            except Exception:
+                pass
     return False
 
 def main():
