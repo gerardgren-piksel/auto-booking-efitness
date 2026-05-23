@@ -38,9 +38,7 @@ def find_login_frame(page):
 
 def fill_login(frame, login, password):
     inputs = frame.locator("input")
-    count = inputs.count()
-    log(f"Login frame inputs found: {count}")
-    if count < 2:
+    if inputs.count() < 2:
         raise SystemExit("Not enough inputs in login frame.")
     inputs.nth(0).fill(login)
     inputs.nth(1).fill(password)
@@ -60,11 +58,6 @@ def click_login(frame):
         return
     frame.get_by_text("Zaloguj się", exact=False).click()
 
-def go_to_login(page):
-    page.goto(LOGIN_URL, wait_until="networkidle")
-    page.get_by_text("Zaloguj się", exact=False).click()
-    page.wait_for_timeout(2000)
-
 def login_user(page):
     frame = None
     for _ in range(20):
@@ -81,46 +74,39 @@ def login_user(page):
     page.wait_for_timeout(3000)
     save_debug(page, "05_after_login")
 
-def extract_week_dates(page):
-    text = page.locator("body").inner_text(timeout=5000)
-    dates = re.findall(r"\d{4}-\d{2}-\d{2}", text)
-    return dates
-
-def target_week_visible(page, target):
-    text = page.locator("body").inner_text(timeout=5000)
-    return target.isoformat() in text
-
-def try_click_booking(page, target_class):
+def click_booking_for_class(page, target_class):
     candidates = [
-        f"tr:has-text('{target_class}')",
-        f"div:has-text('{target_class}')",
-        f"td:has-text('{target_class}')",
+        page.locator(f"tr:has-text('{target_class}')"),
+        page.locator(f"div:has-text('{target_class}')"),
+        page.locator(f"td:has-text('{target_class}')"),
     ]
-    for sel in candidates:
+    for container in candidates:
         try:
-            row = page.locator(sel).first
-            if row.count() == 0:
+            if container.count() == 0:
                 continue
-            text = row.inner_text(timeout=2000).upper()
-            if target_class.upper() not in text:
+            row = container.first
+            txt = row.inner_text(timeout=3000)
+            if target_class.upper() not in norm(txt):
                 continue
-            for btxt in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]:
-                btn = row.get_by_role("button", name=re.compile(btxt, re.I))
+
+            for patt in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]:
+                btn = row.get_by_role("button", name=re.compile(patt, re.I))
                 if btn.count() > 0:
                     btn.first.click()
                     return True
-                link = row.get_by_role("link", name=re.compile(btxt, re.I))
+                link = row.get_by_role("link", name=re.compile(patt, re.I))
                 if link.count() > 0:
                     link.first.click()
                     return True
-            buttons = row.locator("button, a")
-            for i in range(buttons.count()):
+
+            controls = row.locator("button, a")
+            for i in range(controls.count()):
                 try:
-                    txt = (buttons.nth(i).inner_text() or "").strip().upper()
+                    t = (controls.nth(i).inner_text() or "").strip().upper()
                 except Exception:
-                    txt = ""
-                if any(x in txt for x in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]):
-                    buttons.nth(i).click()
+                    t = ""
+                if any(x in t for x in ["ZAPISZ", "REZERW", "ZAPIS", "BOOK", "SIGN UP"]):
+                    controls.nth(i).click()
                     return True
         except Exception:
             pass
@@ -139,29 +125,26 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1200})
 
         page.goto(LOGIN_URL, wait_until="networkidle")
-        save_debug(page, "01_home")
-
-        go_to_login(page)
-        save_debug(page, "02_after_click")
-
+        page.get_by_text("Zaloguj się", exact=False).click()
+        page.wait_for_timeout(2000)
         login_user(page)
 
         page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
         save_debug(page, "06_schedule")
 
         body = page.locator("body").inner_text(timeout=5000)
-        log("Schedule page opened.")
-
-        if norm(TARGET_CLASS) not in norm(body):
-            log(f"Class text not found in current page text: {TARGET_CLASS}")
-        else:
+        if norm(TARGET_CLASS) in norm(body):
             log(f"Class text found on page: {TARGET_CLASS}")
-            if try_click_booking(page, TARGET_CLASS):
+            if click_booking_for_class(page, TARGET_CLASS):
                 log("Clicked booking element.")
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(3000)
                 save_debug(page, "07_after_booking_click")
             else:
                 log("Could not find booking button in the row.")
+                save_debug(page, "07_no_booking_button")
+        else:
+            log(f"Class text not found in current page text: {TARGET_CLASS}")
+            save_debug(page, "07_class_not_found")
 
         browser.close()
 
