@@ -46,11 +46,12 @@ def main():
         save_debug(page, "01_home")
 
         page.get_by_text("Zaloguj się", exact=False).click()
-        page.wait_for_load_state("networkidle")
-        save_debug(page, "02_login_modal")
+        page.wait_for_timeout(2000)
+        save_debug(page, "02_after_click")
 
-        page.get_by_label("Login").fill(LOGIN)
-        page.get_by_label("Hasło").fill(PASSWORD)
+        text = page.locator("body").inner_text()
+        log(text)
+
         save_debug(page, "03_filled_login")
 
         page.get_by_role("button", name=re.compile("zaloguj", re.I)).click()
