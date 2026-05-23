@@ -4,7 +4,8 @@ from playwright.sync_api import sync_playwright
 
 LOGIN = os.getenv("EFITNESS_LOGIN", "")
 PASSWORD = os.getenv("EFITNESS_PASSWORD", "")
-LOGIN_URL = "https://cf43300-cms.efitness.com.pl/login"
+LOGIN_URL = "https://cf43300-cms.efitness.com.pl"
+
 
 out = Path("output")
 out.mkdir(exist_ok=True)
