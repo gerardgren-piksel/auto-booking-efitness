@@ -30,6 +30,15 @@ def save_debug(page, prefix):
     (OUT / f"{prefix}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
     page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
 
+def fill_login_in_context(ctx):
+    try:
+        ctx.get_by_label("Login").fill(LOGIN)
+        ctx.get_by_label("Hasło").fill(PASSWORD)
+        ctx.get_by_role("button", name=re.compile("zaloguj", re.I)).click()
+        return True
+    except Exception:
+        return False
+
 def main():
     target = date.today() + timedelta(days=DAYS_AHEAD)
     log(f"Target date: {target.isoformat()}")
@@ -46,20 +55,27 @@ def main():
         save_debug(page, "01_home")
 
         page.get_by_text("Zaloguj się", exact=False).click()
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(1500)
         save_debug(page, "02_after_click")
 
-        text = page.locator("body").inner_text()
-        log(text)
+        if fill_login_in_context(page):
+            log("Filled login in main page")
+        else:
+            for i, frame in enumerate(page.frames):
+                try:
+                    if frame.get_by_label("Login").count() > 0 or frame.get_by_text("Login").count() > 0:
+                        log(f"Trying frame {i}: {frame.url}")
+                        if fill_login_in_context(frame):
+                            log(f"Filled login in frame {i}")
+                            break
+                except Exception:
+                    pass
 
-        save_debug(page, "03_filled_login")
-
-        page.get_by_role("button", name=re.compile("zaloguj", re.I)).click()
-        page.wait_for_load_state("networkidle")
-        save_debug(page, "04_after_login")
+        page.wait_for_timeout(2000)
+        save_debug(page, "03_after_login")
 
         page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
-        save_debug(page, "05_schedule")
+        save_debug(page, "04_schedule")
 
         body = page.locator("body").inner_text(timeout=5000)
         log("Schedule page opened.")
@@ -73,4 +89,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
