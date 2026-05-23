@@ -68,11 +68,28 @@ def main():
         log(f"Found login frame: {frame.url}")
         save_debug(page, "03_before_fill")
 
-        frame.get_by_label("Login").fill(LOGIN)
-        frame.get_by_label("Hasło").fill(PASSWORD)
+        inputs = frame.locator("input")
+        count = inputs.count()
+        log(f"Login frame inputs found: {count}")
+        if count < 2:
+            raise SystemExit("Not enough inputs in login frame.")
+
+        inputs.nth(0).fill(LOGIN)
+        inputs.nth(1).fill(PASSWORD)
         save_debug(page, "04_filled_login")
 
-        frame.get_by_role("button", name=re.compile("zaloguj", re.I)).click()
+        buttons = frame.get_by_role("button")
+        if buttons.count() > 0:
+            for i in range(buttons.count()):
+                txt = (buttons.nth(i).inner_text() or "").strip().upper()
+                if "ZALOGUJ" in txt:
+                    buttons.nth(i).click()
+                    break
+            else:
+                buttons.nth(0).click()
+        else:
+            frame.get_by_text("Zaloguj się", exact=False).click()
+
         page.wait_for_timeout(3000)
         save_debug(page, "05_after_login")
 
@@ -91,4 +108,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
