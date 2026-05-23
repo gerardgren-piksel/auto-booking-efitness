@@ -31,12 +31,13 @@ def save_debug(page, prefix):
     page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
 
 def current_range(page):
-    try:
-        return page.locator(".weekchooser span").inner_text(timeout=5000).strip()
-    except Exception:
-        txt = page.locator("body").inner_text(timeout=5000)
-        m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
-        return m.group(0) if m else None
+    week = page.locator("div.weekchooser span")
+    if week.count() > 0:
+        return week.first.inner_text(timeout=5000).strip()
+
+    txt = page.locator("body").inner_text(timeout=5000)
+    m = re.search(r"\d{4}-\d{2}-\d{2}\s+do\s+\d{4}-\d{2}-\d{2}", txt)
+    return m.group(0) if m else None
 
 def find_login_frame(page):
     for frame in page.frames:
@@ -84,14 +85,17 @@ def goto_schedule(page):
     save_debug(page, "06_schedule_before_next")
 
 def get_next_week_href(page):
-    selectors = [
-        ".weekchooser a.right",
-        ".weekchooser a[title='Dalej']",
-        ".weekchooser a[href*='kalendarz-zajec?day=']",
+    weekchooser = page.locator("div.weekchooser")
+    if weekchooser.count() == 0:
+        return None
+
+    candidates = [
+        weekchooser.locator("a.right"),
+        weekchooser.locator("a[title='Dalej']"),
+        weekchooser.locator("a[href*='day=']"),
     ]
 
-    for sel in selectors:
-        loc = page.locator(sel)
+    for loc in candidates:
         if loc.count() > 0:
             href = loc.first.get_attribute("href")
             if href:
@@ -103,14 +107,14 @@ def go_next_week(page):
     log(f"Range before: {before}")
 
     href = get_next_week_href(page)
-    log(f"Next week href found: {href}")
+    log(f"Week next href found: {href}")
 
     if not href:
         save_debug(page, "07_next_link_not_found")
-        raise SystemExit("Next week link not found in .weekchooser")
+        raise SystemExit("Week next link not found in div.weekchooser")
 
     absolute_url = href if href.startswith("http") else f"{BASE_URL}/{href.lstrip('/')}"
-    log(f"Going directly to: {absolute_url}")
+    log(f"Going directly to week URL: {absolute_url}")
 
     page.goto(absolute_url, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)
