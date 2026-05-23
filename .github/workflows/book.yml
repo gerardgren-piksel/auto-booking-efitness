@@ -1,18 +1,20 @@
-name: Book checker
+name: eFitness Booking
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 5 * * *"
+
+permissions:
+  contents: read
 
 jobs:
-  run:
+  book:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,17 +25,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install playwright
-          python -m playwright install --with-deps chromium
+          playwright install --with-deps chromium
 
-      - name: Run script
+      - name: Run booking script
         env:
           EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
           EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
-        run: python book.py
-
-      - name: Upload debug
-        uses: actions/upload-artifact@v4
-        with:
-          name: login-debug
-          path: output/
-
+          TARGET_CLASS: "KETTLEBELLS"
+          DAYS_AHEAD: "7"
+        run: |
+          python book.py
