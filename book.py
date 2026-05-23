@@ -79,4 +79,15 @@ def main():
         page.goto(f"{BASE_URL}/kalendarz-zajec", wait_until="networkidle")
         save_debug(page, "06_schedule")
 
-        body = page.locator("body").inner_text(tim
+        body = page.locator("body").inner_text(timeout=5000)
+        log("Schedule page opened.")
+
+        if norm(TARGET_CLASS) in norm(body):
+            log(f"Found class text on page: {TARGET_CLASS}")
+        else:
+            log(f"Class text not found in current page text: {TARGET_CLASS}")
+
+        browser.close()
+
+if __name__ == "__main__":
+    main()
