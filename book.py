@@ -106,6 +106,13 @@ def get_next_week_href(page, target_day):
     log(f"All day links: {links}")
 
     target_s = target_day.isoformat()
+
+    for item in links:
+        href = item["href"]
+        title = item["title"]
+        if title == "Dalej" and f"day={target_s}" in href:
+            return href
+
     for item in links:
         href = item["href"]
         if f"day={target_s}" in href:
@@ -121,7 +128,7 @@ def go_next_week(page):
         save_debug(page, "07_no_range_found")
         raise SystemExit("Could not parse current week range")
 
-    target_day = end_before + timedelta(days=6)
+    target_day = end_before + timedelta(days=7)
     log(f"Expected next week link day=: {target_day.isoformat()}")
 
     href = get_next_week_href(page, target_day)
