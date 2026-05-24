@@ -338,11 +338,13 @@ def event_candidates_for_rule(page, rule: BookingRule):
 
         if normalize_class_text(rule.class_name) not in normalize_class_text(text):
             continue
+
         if rule.time_text and norm(rule.time_text) not in text:
             continue
 
         matched.append(box)
 
+    log(f"Matched event boxes for {rule.class_name}: {len(matched)}")
     return matched
 
 def candidate_matches_rule(candidate, rule: BookingRule):
@@ -353,8 +355,10 @@ def candidate_matches_rule(candidate, rule: BookingRule):
 
     if normalize_class_text(rule.class_name) not in normalize_class_text(text):
         return False
+
     if rule.time_text and norm(rule.time_text) not in text:
         return False
+
     return True
 
 def open_class_details(page, rule: BookingRule):
@@ -487,6 +491,11 @@ def try_book_rule(page, rule: BookingRule):
 
     ov_text = overlay_text(page)
     log(f"Overlay text preview: {ov_text[:500]}")
+
+    if normalize_class_text(rule.class_name) not in normalize_class_text(ov_text):
+        log(f"Overlay class mismatch for rule: {rule_label}")
+        close_overlay_if_possible(page)
+        return False
 
     if rule.time_text and norm(rule.time_text) not in ov_text:
         log(f"Overlay time mismatch for rule: {rule_label}")
