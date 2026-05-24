@@ -31,11 +31,22 @@ jobs:
           TARGET_CLASS: KETTLEBELLS
           DAYS_AHEAD: 7
 
+      - name: List files
+        if: always()
+        run: |
+          pwd
+          echo "--- ls root ---"
+          ls -la
+          echo "--- ls output ---"
+          ls -la output || true
+          echo "--- find repo files ---"
+          find . -maxdepth 3 -type f | sort
+
       - name: Upload debug artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: booking-debug
-          path: output/
+          path: output/**
           if-no-files-found: warn
           retention-days: 7
