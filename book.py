@@ -3,7 +3,7 @@ import re
 from datetime import date, timedelta, datetime
 from pathlib import Path
 from urllib.parse import urljoin
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 BASE_URL = "https://cf43300-cms.efitness.com.pl/"
 LOGIN_URL = BASE_URL
@@ -23,7 +23,7 @@ def log(msg):
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
-def norm(s):
+def norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().upper()
 
 def save_debug(page, prefix):
@@ -50,7 +50,7 @@ def find_login_frame(page):
 def fill_login(frame, login, password):
     inputs = frame.locator("input")
     if inputs.count() < 2:
-        raise SystemExit("Not enough inputs in login frame.")
+        raise RuntimeError("Not enough inputs in login frame.")
     inputs.nth(0).fill(login)
     inputs.nth(1).fill(password)
 
@@ -73,23 +73,23 @@ def login_user(page):
         if frame:
             break
         page.wait_for_timeout(500)
+
     if not frame:
-        raise SystemExit("Login frame not found.")
+        raise RuntimeError("Login frame not found.")
+
     fill_login(frame, LOGIN, PASSWORD)
-    save_debug(page, "04_filled_login")
     click_login(frame)
     page.wait_for_timeout(3000)
-    save_debug(page, "05_after_login")
 
 def goto_schedule(page):
     page.goto(urljoin(BASE_URL, "kalendarz-zajec"), wait_until="domcontentloaded")
     page.wait_for_timeout(2500)
-    save_debug(page, "06_schedule_before_next")
 
 def extract_all_day_links(page):
     links = page.locator("a[href*='day=']")
     data = []
     count = links.count()
+
     for i in range(count):
         a = links.nth(i)
         try:
@@ -99,6 +99,7 @@ def extract_all_day_links(page):
         except Exception:
             continue
         data.append({"href": href, "title": title, "text": text})
+
     return data
 
 def get_next_week_href(page, target_day):
@@ -121,12 +122,11 @@ def get_next_week_href(page, target_day):
     return None
 
 def go_next_week(page):
-    raw_before, start_before, end_before = current_range(page)
+    raw_before, _, end_before = current_range(page)
     log(f"Range before: {raw_before}")
 
     if not end_before:
-        save_debug(page, "07_no_range_found")
-        raise SystemExit("Could not parse current week range")
+        raise RuntimeError("Could not parse current week range.")
 
     target_day = end_before + timedelta(days=7)
     log(f"Expected next week link day=: {target_day.isoformat()}")
@@ -135,8 +135,7 @@ def go_next_week(page):
     log(f"Week next href found: {href}")
 
     if not href:
-        save_debug(page, "07_next_link_not_found")
-        raise SystemExit("Week next href not found from day links")
+        raise RuntimeError("Week next href not found from day links.")
 
     absolute_url = urljoin(BASE_URL, href)
     log(f"Going directly to week URL: {absolute_url}")
@@ -149,49 +148,125 @@ def go_next_week(page):
     return raw_before != raw_after
 
 def open_class_details(page, target_class):
-    cards = page.locator(".event")
-    count = cards.count()
+    target_n = norm(target_class)
 
-    for i in range(count):
-        card = cards.nth(i)
+    event_candidates = [
+        page.locator(".event"),
+        page.locator(".scheduleitem"),
+        page.locator("td div"),
+    ]
+
+    for group in event_candidates:
         try:
-            name = card.locator(".eventname").inner_text(timeout=2000).strip()
+            count = group.count()
         except Exception:
             continue
 
-        if norm(name) != norm(target_class):
-            continue
+        for i in range(count):
+            item = group.nth(i)
+            try:
+                txt = norm(item.inner_text(timeout=1000))
+            except Exception:
+                continue
 
-        try:
-            card.scroll_into_view_if_needed()
-        except Exception:
-            pass
+            if target_n not in txt:
+                continue
 
-        try:
-            card.click(force=True)
-            return True
-        except Exception:
-            pass
+            try:
+                item.scroll_into_view_if_needed()
+            except Exception:
+                pass
+
+            for click_mode in ("normal", "force"):
+                try:
+                    if click_mode == "normal":
+                        item.click(timeout=3000)
+                    else:
+                        item.click(timeout=3000, force=True)
+                    page.wait_for_timeout(1500)
+                    return True
+                except Exception:
+                    pass
 
     return False
 
-def click_booking_in_overlay(page):
-    patterns = [r"ZAPISZ", r"REZERW", r"DOŁĄCZ", r"BOOK", r"SIGN UP"]
-    scopes = [page.locator("#OverlayEventContent"), page.locator(".popupwindow"), page.locator("body")]
+def overlay_visible(page):
+    selectors = [
+        "#OverlayEventContent",
+        ".popupwindow",
+        ".modal",
+        ".ui-dialog",
+        ".overlay",
+    ]
+
+    for sel in selectors:
+        loc = page.locator(sel)
+        try:
+            if loc.count() > 0 and loc.first.is_visible():
+                return True
+        except Exception:
+            pass
+    return False
+
+def click_booking(page):
+    patterns = [
+        r"ZAPISZ",
+        r"REZERW",
+        r"DOŁĄCZ",
+        r"ZAREZERWUJ",
+        r"SIGN UP",
+        r"BOOK",
+    ]
+
+    scopes = [
+        page.locator("#OverlayEventContent"),
+        page.locator(".popupwindow"),
+        page.locator(".ui-dialog"),
+        page.locator("body"),
+    ]
 
     for scope in scopes:
+        try:
+            _ = scope.count()
+        except Exception:
+            continue
+
         for patt in patterns:
             try:
                 btn = scope.get_by_role("button", name=re.compile(patt, re.I))
                 if btn.count() > 0:
-                    btn.first.click(force=True)
-                    return True
-                link = scope.get_by_role("link", name=re.compile(patt, re.I))
-                if link.count() > 0:
-                    link.first.click(force=True)
+                    btn.first.click(timeout=4000)
                     return True
             except Exception:
                 pass
+
+            try:
+                link = scope.get_by_role("link", name=re.compile(patt, re.I))
+                if link.count() > 0:
+                    link.first.click(timeout=4000)
+                    return True
+            except Exception:
+                pass
+
+            try:
+                loc = scope.locator(f"text=/{patt}/i")
+                if loc.count() > 0:
+                    loc.first.click(timeout=4000)
+                    return True
+            except Exception:
+                pass
+
+    return False
+
+def already_booked(page, target_class):
+    try:
+        body = norm(page.locator("body").inner_text(timeout=5000))
+    except Exception:
+        return False
+
+    target_n = norm(target_class)
+    if "ODWOŁAJ REZERWACJ" in body and target_n in body:
+        return True
     return False
 
 def main():
@@ -200,40 +275,57 @@ def main():
     log(f"Target class: {TARGET_CLASS}")
 
     if not LOGIN or not PASSWORD:
-        raise SystemExit("Missing EFITNESS_LOGIN or EFITNESS_PASSWORD secret.")
+        raise RuntimeError("Missing EFITNESS_LOGIN or EFITNESS_PASSWORD secret.")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 2200})
 
-        page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        page.get_by_text("Zaloguj się", exact=False).click()
-        page.wait_for_timeout(2000)
-        login_user(page)
+        try:
+            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            page.get_by_text("Zaloguj się", exact=False).click()
+            page.wait_for_timeout(2000)
 
-        goto_schedule(page)
+            login_user(page)
+            goto_schedule(page)
 
-        moved = go_next_week(page)
-        log(f"Moved next week: {moved}")
-        save_debug(page, "07_schedule_after_next")
+            moved = go_next_week(page)
+            log(f"Moved next week: {moved}")
+            save_debug(page, "07_schedule_after_next")
 
-        body = page.locator("body").inner_text(timeout=5000)
-        if norm(TARGET_CLASS) in norm(body):
-            log(f"Found class text after moving week: {TARGET_CLASS}")
+            if already_booked(page, TARGET_CLASS):
+                log(f"Already booked for class: {TARGET_CLASS}")
+                save_debug(page, "08_already_booked")
+                browser.close()
+                return
+
+            body_after_week = norm(page.locator("body").inner_text(timeout=5000))
+            if norm(TARGET_CLASS) not in body_after_week:
+                log(f"Target class not found in week view: {TARGET_CLASS}")
+                save_debug(page, "08_class_not_found")
+                browser.close()
+                return
+
             opened = open_class_details(page, TARGET_CLASS)
             log(f"Opened class details: {opened}")
-            page.wait_for_timeout(2500)
-            save_debug(page, "08_after_class_open")
+            page.wait_for_timeout(2000)
+            save_debug(page, "09_after_class_open")
 
-            booked = click_booking_in_overlay(page)
+            booked = click_booking(page)
             log(f"Clicked booking control: {booked}")
-            page.wait_for_timeout(2500)
-            save_debug(page, "09_after_booking_click")
-        else:
-            log(f"Target class not found after moving week: {TARGET_CLASS}")
-            save_debug(page, "08_class_not_found")
+            page.wait_for_timeout(3000)
+            save_debug(page, "10_after_booking_click")
 
-        browser.close()
+        except PlaywrightTimeoutError as e:
+            log(f"Timeout: {e}")
+            save_debug(page, "99_timeout")
+            raise
+        except Exception as e:
+            log(f"Error: {e}")
+            save_debug(page, "99_error")
+            raise
+        finally:
+            browser.close()
 
 if __name__ == "__main__":
     main()
