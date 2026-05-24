@@ -166,51 +166,80 @@ def overlay_visible(page):
             pass
     return False
 
-def open_class_details(page, target_class):
-    loc = page.get_by_text(target_class, exact=True)
-
-    if loc.count() == 0:
-        loc = page.get_by_text(target_class, exact=False)
-
-    if loc.count() == 0:
-        return False
-
-    item = loc.first
-
+def try_click_locator(page, loc):
     try:
-        item.scroll_into_view_if_needed()
-        page.wait_for_timeout(800)
+        loc.scroll_into_view_if_needed()
     except Exception:
         pass
 
     try:
-        item.click(timeout=4000)
-        page.wait_for_timeout(2000)
+        loc.click(timeout=4000)
+        page.wait_for_timeout(1500)
         if overlay_visible(page):
             return True
     except Exception:
         pass
 
     try:
-        item.click(timeout=4000, force=True)
-        page.wait_for_timeout(2000)
+        loc.click(timeout=4000, force=True)
+        page.wait_for_timeout(1500)
         if overlay_visible(page):
             return True
     except Exception:
         pass
 
     try:
-        box = item.bounding_box()
+        box = loc.bounding_box()
         if box:
             page.mouse.click(
                 box["x"] + box["width"] / 2,
                 box["y"] + box["height"] / 2
             )
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(1500)
             if overlay_visible(page):
                 return True
     except Exception:
         pass
+
+    return False
+
+def open_class_details(page, target_class):
+    txt = page.get_by_text(target_class, exact=True)
+    if txt.count() == 0:
+        txt = page.get_by_text(target_class, exact=False)
+
+    if txt.count() == 0:
+        log(f"Text not found for class: {target_class}")
+        return False
+
+    base = txt.first
+    candidates = [
+        base,
+        base.locator(".."),
+        base.locator("..").locator(".."),
+        base.locator("..").locator("..").locator(".."),
+        page.locator(f".event:has-text('{target_class}')").first,
+        page.locator(f".scheduleitem:has-text('{target_class}')").first,
+        page.locator(f"td:has-text('{target_class}')").first,
+    ]
+
+    for idx, candidate in enumerate(candidates, start=1):
+        try:
+            if candidate.count() == 0:
+                continue
+        except Exception:
+            continue
+
+        try:
+            text_preview = candidate.inner_text(timeout=1000)
+        except Exception:
+            text_preview = "<no text>"
+
+        log(f"Trying candidate {idx}: {text_preview[:200]}")
+
+        if try_click_locator(page, candidate.first if hasattr(candidate, 'first') else candidate):
+            log(f"Overlay opened from candidate {idx}")
+            return True
 
     return False
 
