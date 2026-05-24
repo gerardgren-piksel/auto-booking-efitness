@@ -257,10 +257,7 @@ def try_click_locator(page, loc):
     try:
         box = loc.bounding_box()
         if box:
-            page.mouse.click(
-                box["x"] + box["width"] / 2,
-                box["y"] + box["height"] / 2
-            )
+            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
             page.wait_for_timeout(1200)
             if overlay_visible(page):
                 return True
@@ -339,9 +336,6 @@ def event_candidates_for_rule(page, rule: BookingRule):
         if normalize_class_text(rule.class_name) not in normalize_class_text(text):
             continue
 
-        if rule.time_text and norm(rule.time_text) not in text:
-            continue
-
         matched.append(box)
 
     log(f"Matched event boxes for {rule.class_name}: {len(matched)}")
@@ -356,30 +350,7 @@ def candidate_matches_rule(candidate, rule: BookingRule):
     if normalize_class_text(rule.class_name) not in normalize_class_text(text):
         return False
 
-    if rule.time_text and norm(rule.time_text) not in text:
-        return False
-
     return True
-
-def open_class_details(page, rule: BookingRule):
-    candidates = event_candidates_for_rule(page, rule)
-
-    for idx, candidate in enumerate(candidates, start=1):
-        try:
-            text_preview = candidate.inner_text(timeout=1000)
-        except Exception:
-            text_preview = "<no text>"
-
-        if not candidate_matches_rule(candidate, rule):
-            continue
-
-        log(f"Trying candidate {idx}: {text_preview[:200]}")
-
-        if try_click_locator(page, candidate):
-            log(f"Overlay opened from candidate {idx}")
-            return True
-
-    return False
 
 def overlay_text(page):
     selectors = [
@@ -396,6 +367,45 @@ def overlay_text(page):
         except Exception:
             pass
     return ""
+
+def open_class_details(page, rule: BookingRule):
+    candidates = event_candidates_for_rule(page, rule)
+
+    for idx, candidate in enumerate(candidates, start=1):
+        try:
+            text_preview = candidate.inner_text(timeout=1000)
+        except Exception:
+            text_preview = "<no text>"
+
+        if not candidate_matches_rule(candidate, rule):
+            continue
+
+        log(f"Trying candidate {idx}: {text_preview[:200]}")
+
+        close_overlay_if_possible(page)
+        page.wait_for_timeout(500)
+
+        if not try_click_locator(page, candidate):
+            continue
+
+        ov_text = overlay_text(page)
+        log(f"Overlay text after candidate {idx}: {ov_text[:500]}")
+
+        if normalize_class_text(rule.class_name) not in normalize_class_text(ov_text):
+            close_overlay_if_possible(page)
+            page.wait_for_timeout(500)
+            continue
+
+        if rule.time_text and norm(rule.time_text) not in ov_text:
+            log(f"Candidate {idx} rejected by overlay time mismatch.")
+            close_overlay_if_possible(page)
+            page.wait_for_timeout(500)
+            continue
+
+        log(f"Overlay accepted from candidate {idx}")
+        return True
+
+    return False
 
 def click_booking(page):
     patterns = [
@@ -463,8 +473,6 @@ def rule_present_in_week_view(page, rule: BookingRule):
     body = norm(page.locator("body").inner_text(timeout=5000))
     if normalize_class_text(rule.class_name) not in normalize_class_text(body):
         return False
-    if rule.time_text and norm(rule.time_text) not in body:
-        return False
     return True
 
 def try_book_rule(page, rule: BookingRule):
@@ -491,16 +499,6 @@ def try_book_rule(page, rule: BookingRule):
 
     ov_text = overlay_text(page)
     log(f"Overlay text preview: {ov_text[:500]}")
-
-    if normalize_class_text(rule.class_name) not in normalize_class_text(ov_text):
-        log(f"Overlay class mismatch for rule: {rule_label}")
-        close_overlay_if_possible(page)
-        return False
-
-    if rule.time_text and norm(rule.time_text) not in ov_text:
-        log(f"Overlay time mismatch for rule: {rule_label}")
-        close_overlay_if_possible(page)
-        return False
 
     booked = click_booking(page)
     log(f"Clicked booking control for rule {rule_label}: {booked}")
