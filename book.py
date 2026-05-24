@@ -257,7 +257,10 @@ def try_click_locator(page, loc):
     try:
         box = loc.bounding_box()
         if box:
-            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.mouse.click(
+                box["x"] + box["width"] / 2,
+                box["y"] + box["height"] / 2
+            )
             page.wait_for_timeout(1200)
             if overlay_visible(page):
                 return True
@@ -338,6 +341,25 @@ def event_candidates_for_rule(page, rule: BookingRule):
 
         matched.append(box)
 
+    if normalize_class_text(rule.class_name) == "HYBRID RACE" and rule.time_text in ("09:00", "10:00"):
+        scored = []
+        for box in matched:
+            try:
+                bb = box.bounding_box()
+                if bb:
+                    scored.append((bb["y"], box))
+            except Exception:
+                pass
+
+        scored.sort(key=lambda x: x[0])
+
+        if rule.time_text == "09:00" and scored:
+            matched = [scored[0][1]]
+        elif rule.time_text == "10:00" and scored:
+            matched = [scored[-1][1]]
+
+        log(f"Hybrid Race candidate positions: {[round(y, 1) for y, _ in scored]}")
+
     log(f"Matched event boxes for {rule.class_name}: {len(matched)}")
     return matched
 
@@ -351,22 +373,6 @@ def candidate_matches_rule(candidate, rule: BookingRule):
         return False
 
     return True
-
-def overlay_text(page):
-    selectors = [
-        "#OverlayEventContent",
-        ".popupwindow",
-        ".ui-dialog",
-        ".modal",
-    ]
-    for sel in selectors:
-        loc = page.locator(sel)
-        try:
-            if loc.count() > 0 and loc.first.is_visible():
-                return norm(loc.first.inner_text(timeout=3000))
-        except Exception:
-            pass
-    return ""
 
 def open_class_details(page, rule: BookingRule):
     candidates = event_candidates_for_rule(page, rule)
@@ -385,27 +391,27 @@ def open_class_details(page, rule: BookingRule):
         close_overlay_if_possible(page)
         page.wait_for_timeout(500)
 
-        if not try_click_locator(page, candidate):
-            continue
-
-        ov_text = overlay_text(page)
-        log(f"Overlay text after candidate {idx}: {ov_text[:500]}")
-
-        if normalize_class_text(rule.class_name) not in normalize_class_text(ov_text):
-            close_overlay_if_possible(page)
-            page.wait_for_timeout(500)
-            continue
-
-        if rule.time_text and norm(rule.time_text) not in ov_text:
-            log(f"Candidate {idx} rejected by overlay time mismatch.")
-            close_overlay_if_possible(page)
-            page.wait_for_timeout(500)
-            continue
-
-        log(f"Overlay accepted from candidate {idx}")
-        return True
+        if try_click_locator(page, candidate):
+            log(f"Overlay opened from candidate {idx}")
+            return True
 
     return False
+
+def overlay_text(page):
+    selectors = [
+        "#OverlayEventContent",
+        ".popupwindow",
+        ".ui-dialog",
+        ".modal",
+    ]
+    for sel in selectors:
+        loc = page.locator(sel)
+        try:
+            if loc.count() > 0 and loc.first.is_visible():
+                return norm(loc.first.inner_text(timeout=3000))
+        except Exception:
+            pass
+    return ""
 
 def click_booking(page):
     patterns = [
