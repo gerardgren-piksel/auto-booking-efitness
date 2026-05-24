@@ -2,11 +2,26 @@ name: Book class
 
 on:
   workflow_dispatch:
-  pull_request:
+    inputs:
+      booking_rules:
+        description: "Każda linia: NAZWA | DZIEŃ | GODZINA"
+        required: false
+        default: ""
+      days_ahead:
+        description: "Ile dni do przodu"
+        required: false
+        default: "7"
+
+  schedule:
+    - cron: "0 1 * * *"
+      timezone: "Europe/Warsaw"
 
 jobs:
   book:
     runs-on: ubuntu-latest
+    env:
+      BOOKING_RULES: ${{ github.event.inputs.booking_rules || vars.BOOKING_RULES }}
+      DAYS_AHEAD: ${{ github.event.inputs.days_ahead || vars.DAYS_AHEAD || '7' }}
 
     steps:
       - name: Checkout
@@ -28,8 +43,8 @@ jobs:
         env:
           EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
           EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
-          TARGET_CLASS: KETTLEBELLS
-          DAYS_AHEAD: 7
+          BOOKING_RULES: ${{ env.BOOKING_RULES }}
+          DAYS_AHEAD: ${{ env.DAYS_AHEAD }}
 
       - name: List files
         if: always()
