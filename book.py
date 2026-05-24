@@ -1,5 +1,6 @@
 import os
 import re
+from dataclasses import dataclass
 from datetime import date, timedelta, datetime
 from pathlib import Path
 from urllib.parse import urljoin
@@ -10,12 +11,37 @@ LOGIN_URL = BASE_URL
 
 LOGIN = os.getenv("EFITNESS_LOGIN", "")
 PASSWORD = os.getenv("EFITNESS_PASSWORD", "")
-TARGET_CLASS = os.getenv("TARGET_CLASS", "KETTLEBELLS")
+BOOKING_RULES_RAW = os.getenv("BOOKING_RULES", "")
 DAYS_AHEAD = int(os.getenv("DAYS_AHEAD", "7"))
 
 OUT = Path("output")
 OUT.mkdir(exist_ok=True)
 LOG_PATH = OUT / "run.log"
+
+DAY_MAP = {
+    "MONDAY": "PONIEDZIAŁEK",
+    "TUESDAY": "WTOREK",
+    "WEDNESDAY": "ŚRODA",
+    "THURSDAY": "CZWARTEK",
+    "FRIDAY": "PIĄTEK",
+    "SATURDAY": "SOBOTA",
+    "SUNDAY": "NIEDZIELA",
+    "PONIEDZIAŁEK": "PONIEDZIAŁEK",
+    "WTOREK": "WTOREK",
+    "ŚRODA": "ŚRODA",
+    "SRODA": "ŚRODA",
+    "CZWARTEK": "CZWARTEK",
+    "PIĄTEK": "PIĄTEK",
+    "PIATEK": "PIĄTEK",
+    "SOBOTA": "SOBOTA",
+    "NIEDZIELA": "NIEDZIELA",
+}
+
+@dataclass
+class BookingRule:
+    class_name: str
+    day_name: str | None = None
+    time_text: str | None = None
 
 def log(msg):
     line = f"{datetime.now().isoformat(timespec='seconds')} | {msg}"
@@ -26,11 +52,51 @@ def log(msg):
 def norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().upper()
 
+def slug(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_")[:80]
+
 def save_debug(page, prefix):
     OUT.mkdir(exist_ok=True)
     (OUT / f"{prefix}.html").write_text(page.content(), encoding="utf-8")
     (OUT / f"{prefix}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
     page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
+
+def normalize_day_name(value: str | None):
+    if not value:
+        return None
+    key = norm(value)
+    return DAY_MAP.get(key, key)
+
+def parse_rules():
+    rules = []
+    raw = BOOKING_RULES_RAW.strip()
+
+    if not raw:
+        return [BookingRule(class_name="KETTLEBELLS")]
+
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        parts = [p.strip() for p in line.split("|")]
+        parts = [p for p in parts if p]
+
+        if len(parts) == 1:
+            rules.append(BookingRule(class_name=parts[0]))
+        elif len(parts) == 2:
+            rules.append(BookingRule(
+                class_name=parts[0],
+                day_name=normalize_day_name(parts[1]),
+            ))
+        else:
+            rules.append(BookingRule(
+                class_name=parts[0],
+                day_name=normalize_day_name(parts[1]),
+                time_text=parts[2],
+            ))
+
+    return rules
 
 def current_range(page):
     txt = page.locator("body").inner_text(timeout=5000)
@@ -203,101 +269,7 @@ def try_click_locator(page, loc):
 
     return False
 
-def open_class_details(page, target_class):
-    txt = page.get_by_text(target_class, exact=True)
-    if txt.count() == 0:
-        txt = page.get_by_text(target_class, exact=False)
-
-    if txt.count() == 0:
-        log(f"Text not found for class: {target_class}")
-        return False
-
-    base = txt.first
-    candidates = [
-        base,
-        base.locator(".."),
-        base.locator("..").locator(".."),
-        base.locator("..").locator("..").locator(".."),
-        page.locator(f".event:has-text('{target_class}')").first,
-        page.locator(f".scheduleitem:has-text('{target_class}')").first,
-        page.locator(f"td:has-text('{target_class}')").first,
-    ]
-
-    for idx, candidate in enumerate(candidates, start=1):
-        try:
-            if candidate.count() == 0:
-                continue
-        except Exception:
-            continue
-
-        try:
-            text_preview = candidate.inner_text(timeout=1000)
-        except Exception:
-            text_preview = "<no text>"
-
-        log(f"Trying candidate {idx}: {text_preview[:200]}")
-
-        if try_click_locator(page, candidate.first if hasattr(candidate, 'first') else candidate):
-            log(f"Overlay opened from candidate {idx}")
-            return True
-
-    return False
-
-def click_booking(page):
-    patterns = [
-        r"ZAPISZ",
-        r"ZAREZERWUJ",
-        r"REZERWUJ",
-        r"REZERWACJ",
-        r"DOŁĄCZ",
-        r"BOOK",
-        r"SIGN UP",
-    ]
-
-    scopes = [
-        page.locator("#OverlayEventContent"),
-        page.locator(".popupwindow"),
-        page.locator(".ui-dialog"),
-        page.locator(".modal"),
-        page.locator("body"),
-    ]
-
-    for scope in scopes:
-        try:
-            _ = scope.count()
-        except Exception:
-            continue
-
-        for patt in patterns:
-            try:
-                btn = scope.get_by_role("button", name=re.compile(patt, re.I))
-                if btn.count() > 0:
-                    btn.first.click(timeout=4000, force=True)
-                    return True
-            except Exception:
-                pass
-
-            try:
-                link = scope.get_by_role("link", name=re.compile(patt, re.I))
-                if link.count() > 0:
-                    link.first.click(timeout=4000, force=True)
-                    return True
-            except Exception:
-                pass
-
-            try:
-                txt = scope.locator(f"text=/{patt}/i")
-                if txt.count() > 0:
-                    txt.first.click(timeout=4000, force=True)
-                    return True
-            except Exception:
-                pass
-
-    return False
-
-def already_booked(page, target_class):
-    target_n = norm(target_class)
-
+def registered_section_text(page):
     candidates = [
         page.locator("#calendarregisteredmeetings"),
         page.locator(".calendarregisteredmeetings"),
@@ -307,76 +279,61 @@ def already_booked(page, target_class):
         try:
             if loc.count() == 0:
                 continue
-            text = norm(loc.first.inner_text(timeout=5000))
-            log(f"Registered meetings section: {text[:500]}")
-            if target_n in text:
-                return True
+            return norm(loc.first.inner_text(timeout=5000))
         except Exception:
             pass
 
-    return False
+    return ""
 
+def already_booked(page, rule: BookingRule):
+    text = registered_section_text(page)
+    log(f"Registered meetings section: {text[:500]}")
 
-def main():
-    target = date.today() + timedelta(days=DAYS_AHEAD)
+    if norm(rule.class_name) not in text:
+        return False
+    if rule.day_name and norm(rule.day_name) not in text:
+        return False
+    if rule.time_text and norm(rule.time_text) not in text:
+        return False
+    return True
 
-    log(f"Working dir: {Path.cwd()}")
-    log(f"Output dir: {OUT.resolve()}")
-    log(f"Target date: {target.isoformat()}")
-    log(f"Target class: {TARGET_CLASS}")
+def close_overlay_if_possible(page):
+    candidates = [
+        page.get_by_role("button", name=re.compile(r"zamknij|close", re.I)),
+        page.locator(".ui-dialog-titlebar-close"),
+        page.locator(".popupwindow .close"),
+        page.locator(".modal .close"),
+    ]
 
-    if not LOGIN or not PASSWORD:
-        raise RuntimeError("Missing EFITNESS_LOGIN or EFITNESS_PASSWORD secret.")
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 2200})
-
+    for loc in candidates:
         try:
-            page.goto(LOGIN_URL, wait_until="domcontentloaded")
-            page.get_by_text("Zaloguj się", exact=False).click()
-            page.wait_for_timeout(2000)
-
-            login_user(page)
-            save_debug(page, "05_after_login")
-
-            goto_schedule(page)
-            save_debug(page, "06_schedule_before_next")
-
-            moved = go_next_week(page)
-            log(f"Moved next week: {moved}")
-            save_debug(page, "07_schedule_after_next")
-
-            if already_booked(page, TARGET_CLASS):
-                log(f"Already booked for class: {TARGET_CLASS}")
-                save_debug(page, "08_already_booked")
+            if loc.count() > 0 and loc.first.is_visible():
+                loc.first.click(timeout=2000, force=True)
+                page.wait_for_timeout(1000)
                 return
+        except Exception:
+            pass
 
-            body_after_week = norm(page.locator("body").inner_text(timeout=5000))
-            if norm(TARGET_CLASS) not in body_after_week:
-                log(f"Target class not found in week view: {TARGET_CLASS}")
-                save_debug(page, "08_class_not_found")
-                return
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(800)
+    except Exception:
+        pass
 
-            opened = open_class_details(page, TARGET_CLASS)
-            log(f"Opened class details: {opened}")
-            save_debug(page, "09_after_class_open")
+def event_candidates_for_rule(page, rule: BookingRule):
+    text_locator = page.get_by_text(rule.class_name, exact=True)
+    if text_locator.count() == 0:
+        text_locator = page.get_by_text(rule.class_name, exact=False)
 
-            booked = click_booking(page)
-            log(f"Clicked booking control: {booked}")
-            page.wait_for_timeout(3000)
-            save_debug(page, "10_after_booking_click")
+    candidates = []
 
-        except PlaywrightTimeoutError as e:
-            log(f"Timeout: {e}")
-            save_debug(page, "99_timeout")
-            raise
-        except Exception as e:
-            log(f"Error: {e}")
-            save_debug(page, "99_error")
-            raise
-        finally:
-            browser.close()
+    for i in range(min(text_locator.count(), 10)):
+        base = text_locator.nth(i)
+        candidates.extend([
+            base,
+            base.locator(".."),
+            base.locator("..").locator(".."),
+            base.locator("..").locator("..").locator(".."),
+        ])
 
-if __name__ == "__main__":
-    main()
+    candidates.exten
