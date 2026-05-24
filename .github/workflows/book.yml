@@ -1,45 +1,16 @@
-name: eFitness Booking
+- name: Run booking
+  run: python book.py
+  env:
+    EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
+    EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
+    TARGET_CLASS: KETTLEBELLS
+    DAYS_AHEAD: 7
 
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  book:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install playwright
-          playwright install --with-deps chromium
-
-      - name: Run booking script
-        env:
-          EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
-          EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
-          TARGET_CLASS: "KETTLEBELLS"
-          DAYS_AHEAD: "7"
-        run: |
-          python book.py
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: efitness-debug
-          path: output/
-          if-no-files-found: warn
+- name: Upload debug artifacts
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: booking-debug
+    path: output/
+    if-no-files-found: warn
+    retention-days: 7
