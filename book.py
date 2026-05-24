@@ -240,7 +240,7 @@ def try_click_locator(page, loc):
 
     try:
         loc.click(timeout=4000)
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(1200)
         if overlay_visible(page):
             return True
     except Exception:
@@ -248,7 +248,7 @@ def try_click_locator(page, loc):
 
     try:
         loc.click(timeout=4000, force=True)
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(1200)
         if overlay_visible(page):
             return True
     except Exception:
@@ -261,7 +261,7 @@ def try_click_locator(page, loc):
                 box["x"] + box["width"] / 2,
                 box["y"] + box["height"] / 2
             )
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(1200)
             if overlay_visible(page):
                 return True
     except Exception:
@@ -326,39 +326,26 @@ def close_overlay_if_possible(page):
         pass
 
 def event_candidates_for_rule(page, rule: BookingRule):
-    text_locator = page.get_by_text(rule.class_name, exact=True)
-    if text_locator.count() == 0:
-        text_locator = page.get_by_text(rule.class_name, exact=False)
+    event_boxes = page.locator(".event")
+    matched = []
 
-    candidates = []
-
-    for i in range(min(text_locator.count(), 10)):
-        base = text_locator.nth(i)
-        candidates.extend([
-            base,
-            base.locator(".."),
-            base.locator("..").locator(".."),
-            base.locator("..").locator("..").locator(".."),
-        ])
-
-    candidates.extend([
-        page.locator(f".event:has-text('{rule.class_name}')"),
-        page.locator(f".scheduleitem:has-text('{rule.class_name}')"),
-        page.locator(f"td:has-text('{rule.class_name}')"),
-        page.locator(f"div:has-text('{rule.class_name}')"),
-        page.locator(f"a:has-text('{rule.class_name}')"),
-    ])
-
-    flat = []
-    for c in candidates:
+    for i in range(event_boxes.count()):
+        box = event_boxes.nth(i)
         try:
-            cnt = c.count()
-            for i in range(min(cnt, 5)):
-                flat.append(c.nth(i))
+            text = norm(box.inner_text(timeout=1000))
         except Exception:
-            pass
+            continue
 
-    return flat
+        if normalize_class_text(rule.class_name) not in normalize_class_text(text):
+            continue
+        if rule.day_name and norm(rule.day_name) not in text:
+            continue
+        if rule.time_text and norm(rule.time_text) not in text:
+            continue
+
+        matched.append(box)
+
+    return matched
 
 def candidate_matches_rule(candidate, rule: BookingRule):
     try:
@@ -391,17 +378,6 @@ def open_class_details(page, rule: BookingRule):
         if try_click_locator(page, candidate):
             log(f"Overlay opened from candidate {idx}")
             return True
-
-    if not rule.day_name and not rule.time_text:
-        fallback = page.get_by_text(rule.class_name, exact=False)
-        for i in range(min(fallback.count(), 5)):
-            cand = fallback.nth(i)
-            try:
-                log(f"Trying fallback candidate {i + 1}")
-                if try_click_locator(page, cand):
-                    return True
-            except Exception:
-                pass
 
     return False
 
@@ -495,6 +471,9 @@ def rule_present_in_week_view(page, rule: BookingRule):
     return True
 
 def try_book_rule(page, rule: BookingRule):
+    close_overlay_if_possible(page)
+    page.wait_for_timeout(1000)
+
     rule_label = f"{rule.class_name} | {rule.day_name or '*'} | {rule.time_text or '*'}"
     log(f"Checking rule: {rule_label}")
 
@@ -536,7 +515,7 @@ def try_book_rule(page, rule: BookingRule):
     save_debug(page, f"11_after_booking_check_{slug(rule_label)}")
 
     close_overlay_if_possible(page)
-    return confirmed or booked
+    return confirmed
 
 def main():
     target = date.today() + timedelta(days=DAYS_AHEAD)
@@ -563,34 +542,4 @@ def main():
             save_debug(page, "05_after_login")
 
             goto_schedule(page)
-            save_debug(page, "06_schedule_before_next")
-
-            moved = go_next_week(page)
-            log(f"Moved next week: {moved}")
-            save_debug(page, "07_schedule_after_next")
-
-            booked_any = False
-
-            for rule in rules:
-                result = try_book_rule(page, rule)
-                if result:
-                    log(f"SUCCESS for rule: {rule}")
-                    booked_any = True
-
-            if not booked_any:
-                log("No rule was booked.")
-                save_debug(page, "12_no_rule_booked")
-
-        except PlaywrightTimeoutError as e:
-            log(f"Timeout: {e}")
-            save_debug(page, "99_timeout")
-            raise
-        except Exception as e:
-            log(f"Error: {e}")
-            save_debug(page, "99_error")
-            raise
-        finally:
-            browser.close()
-
-if __name__ == "__main__":
-    main()
+            save_debug(page, "06_sche
