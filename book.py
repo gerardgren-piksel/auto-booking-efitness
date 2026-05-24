@@ -285,11 +285,16 @@ def registered_section_text(page):
 
     return ""
 
+def normalize_class_text(value: str) -> str:
+    value = norm(value)
+    value = re.sub(r"[.,:;!?]+$", "", value).strip()
+    return value
+
 def already_booked(page, rule: BookingRule):
     text = registered_section_text(page)
     log(f"Registered meetings section: {text[:500]}")
 
-    if norm(rule.class_name) not in text:
+    if normalize_class_text(rule.class_name) not in normalize_class_text(text):
         return False
     if rule.day_name and norm(rule.day_name) not in text:
         return False
@@ -336,4 +341,256 @@ def event_candidates_for_rule(page, rule: BookingRule):
             base.locator("..").locator("..").locator(".."),
         ])
 
-    candidates.exten
+    candidates.extend([
+        page.locator(f".event:has-text('{rule.class_name}')"),
+        page.locator(f".scheduleitem:has-text('{rule.class_name}')"),
+        page.locator(f"td:has-text('{rule.class_name}')"),
+        page.locator(f"div:has-text('{rule.class_name}')"),
+        page.locator(f"a:has-text('{rule.class_name}')"),
+    ])
+
+    flat = []
+    for c in candidates:
+        try:
+            cnt = c.count()
+            for i in range(min(cnt, 5)):
+                flat.append(c.nth(i))
+        except Exception:
+            pass
+
+    return flat
+
+def candidate_matches_rule(candidate, rule: BookingRule):
+    try:
+        text = norm(candidate.inner_text(timeout=1000))
+    except Exception:
+        return False
+
+    if normalize_class_text(rule.class_name) not in normalize_class_text(text):
+        return False
+    if rule.day_name and norm(rule.day_name) not in text:
+        return False
+    if rule.time_text and norm(rule.time_text) not in text:
+        return False
+    return True
+
+def open_class_details(page, rule: BookingRule):
+    candidates = event_candidates_for_rule(page, rule)
+
+    for idx, candidate in enumerate(candidates, start=1):
+        try:
+            text_preview = candidate.inner_text(timeout=1000)
+        except Exception:
+            text_preview = "<no text>"
+
+        if not candidate_matches_rule(candidate, rule):
+            continue
+
+        log(f"Trying candidate {idx}: {text_preview[:200]}")
+
+        if try_click_locator(page, candidate):
+            log(f"Overlay opened from candidate {idx}")
+            return True
+
+    if not rule.day_name and not rule.time_text:
+        fallback = page.get_by_text(rule.class_name, exact=False)
+        for i in range(min(fallback.count(), 5)):
+            cand = fallback.nth(i)
+            try:
+                log(f"Trying fallback candidate {i + 1}")
+                if try_click_locator(page, cand):
+                    return True
+            except Exception:
+                pass
+
+    return False
+
+def overlay_text(page):
+    selectors = [
+        "#OverlayEventContent",
+        ".popupwindow",
+        ".ui-dialog",
+        ".modal",
+    ]
+    for sel in selectors:
+        loc = page.locator(sel)
+        try:
+            if loc.count() > 0 and loc.first.is_visible():
+                return norm(loc.first.inner_text(timeout=3000))
+        except Exception:
+            pass
+    return ""
+
+def click_booking(page):
+    patterns = [
+        r"ZAPISZ",
+        r"ZAREZERWUJ",
+        r"REZERWUJ",
+        r"REZERWACJ",
+        r"DOŁĄCZ",
+        r"BOOK",
+        r"SIGN UP",
+    ]
+
+    scopes = [
+        page.locator("#OverlayEventContent"),
+        page.locator(".popupwindow"),
+        page.locator(".ui-dialog"),
+        page.locator(".modal"),
+        page.locator("body"),
+    ]
+
+    for scope in scopes:
+        try:
+            _ = scope.count()
+        except Exception:
+            continue
+
+        for patt in patterns:
+            try:
+                btn = scope.get_by_role("button", name=re.compile(patt, re.I))
+                if btn.count() > 0:
+                    btn.first.click(timeout=4000, force=True)
+                    return True
+            except Exception:
+                pass
+
+            try:
+                link = scope.get_by_role("link", name=re.compile(patt, re.I))
+                if link.count() > 0:
+                    link.first.click(timeout=4000, force=True)
+                    return True
+            except Exception:
+                pass
+
+            try:
+                txt = scope.locator(f"text=/{patt}/i")
+                if txt.count() > 0:
+                    txt.first.click(timeout=4000, force=True)
+                    return True
+            except Exception:
+                pass
+
+    return False
+
+def booking_success_text_present(page):
+    text = overlay_text(page) + " " + norm(page.locator("body").inner_text(timeout=5000))
+    success_markers = [
+        "ODWOŁAJ REZERWACJ",
+        "JESTEŚ ZAPISANY",
+        "ZOSTAŁEŚ ZAPISANY",
+        "REZERWACJA ZOSTAŁA",
+        "ANULUJ REZERWACJ",
+    ]
+    return any(marker in text for marker in success_markers)
+
+def rule_present_in_week_view(page, rule: BookingRule):
+    body = norm(page.locator("body").inner_text(timeout=5000))
+    if normalize_class_text(rule.class_name) not in normalize_class_text(body):
+        return False
+    if rule.day_name and norm(rule.day_name) not in body:
+        return False
+    if rule.time_text and norm(rule.time_text) not in body:
+        return False
+    return True
+
+def try_book_rule(page, rule: BookingRule):
+    rule_label = f"{rule.class_name} | {rule.day_name or '*'} | {rule.time_text or '*'}"
+    log(f"Checking rule: {rule_label}")
+
+    if already_booked(page, rule):
+        log(f"Already booked for rule: {rule_label}")
+        return False
+
+    if not rule_present_in_week_view(page, rule):
+        log(f"Rule not present in week view: {rule_label}")
+        return False
+
+    opened = open_class_details(page, rule)
+    log(f"Opened class details for rule {rule_label}: {opened}")
+    save_debug(page, f"09_after_class_open_{slug(rule_label)}")
+
+    if not opened:
+        return False
+
+    ov_text = overlay_text(page)
+    log(f"Overlay text preview: {ov_text[:500]}")
+
+    if rule.day_name and norm(rule.day_name) not in ov_text:
+        log(f"Overlay day mismatch for rule: {rule_label}")
+        close_overlay_if_possible(page)
+        return False
+
+    if rule.time_text and norm(rule.time_text) not in ov_text:
+        log(f"Overlay time mismatch for rule: {rule_label}")
+        close_overlay_if_possible(page)
+        return False
+
+    booked = click_booking(page)
+    log(f"Clicked booking control for rule {rule_label}: {booked}")
+    page.wait_for_timeout(3000)
+    save_debug(page, f"10_after_booking_click_{slug(rule_label)}")
+
+    confirmed = already_booked(page, rule) or booking_success_text_present(page)
+    log(f"Booking confirmed for rule {rule_label}: {confirmed}")
+    save_debug(page, f"11_after_booking_check_{slug(rule_label)}")
+
+    close_overlay_if_possible(page)
+    return confirmed or booked
+
+def main():
+    target = date.today() + timedelta(days=DAYS_AHEAD)
+    rules = parse_rules()
+
+    log(f"Working dir: {Path.cwd()}")
+    log(f"Output dir: {OUT.resolve()}")
+    log(f"Target date: {target.isoformat()}")
+    log(f"Booking rules: {rules}")
+
+    if not LOGIN or not PASSWORD:
+        raise RuntimeError("Missing EFITNESS_LOGIN or EFITNESS_PASSWORD secret.")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1440, "height": 2200})
+
+        try:
+            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            page.get_by_text("Zaloguj się", exact=False).click()
+            page.wait_for_timeout(2000)
+
+            login_user(page)
+            save_debug(page, "05_after_login")
+
+            goto_schedule(page)
+            save_debug(page, "06_schedule_before_next")
+
+            moved = go_next_week(page)
+            log(f"Moved next week: {moved}")
+            save_debug(page, "07_schedule_after_next")
+
+            booked_any = False
+
+            for rule in rules:
+                result = try_book_rule(page, rule)
+                if result:
+                    log(f"SUCCESS for rule: {rule}")
+                    booked_any = True
+
+            if not booked_any:
+                log("No rule was booked.")
+                save_debug(page, "12_no_rule_booked")
+
+        except PlaywrightTimeoutError as e:
+            log(f"Timeout: {e}")
+            save_debug(page, "99_timeout")
+            raise
+        except Exception as e:
+            log(f"Error: {e}")
+            save_debug(page, "99_error")
+            raise
+        finally:
+            browser.close()
+
+if __name__ == "__main__":
+    main()
