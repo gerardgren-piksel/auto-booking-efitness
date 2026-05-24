@@ -19,9 +19,6 @@ on:
 jobs:
   book:
     runs-on: ubuntu-latest
-    env:
-      BOOKING_RULES: ${{ github.event.inputs.booking_rules || vars.BOOKING_RULES }}
-      DAYS_AHEAD: ${{ github.event.inputs.days_ahead || vars.DAYS_AHEAD || '7' }}
 
     steps:
       - name: Checkout
@@ -38,13 +35,28 @@ jobs:
           pip install playwright
           python -m playwright install chromium
 
+      - name: Prepare env
+        run: |
+          echo "BOOKING_RULES<<EOF" >> $GITHUB_ENV
+          echo "${{ github.event.inputs.booking_rules || vars.BOOKING_RULES }}" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          echo "DAYS_AHEAD=${{ github.event.inputs.days_ahead || vars.DAYS_AHEAD || '7' }}" >> $GITHUB_ENV
+
+      - name: Debug variables
+        run: |
+          echo "DAYS_AHEAD=$DAYS_AHEAD"
+          echo "BOOKING_RULES<<EOF"
+          echo "$BOOKING_RULES"
+          echo "EOF"
+
+      - name: Check syntax
+        run: python -m py_compile book.py
+
       - name: Run booking
         run: python book.py
         env:
           EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
           EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
-          BOOKING_RULES: ${{ env.BOOKING_RULES }}
-          DAYS_AHEAD: ${{ env.DAYS_AHEAD }}
 
       - name: List files
         if: always()
