@@ -296,15 +296,26 @@ def click_booking(page):
     return False
 
 def already_booked(page, target_class):
-    try:
-        body = norm(page.locator("body").inner_text(timeout=5000))
-    except Exception:
-        return False
-
     target_n = norm(target_class)
-    if "ODWOŁAJ REZERWACJ" in body and target_n in body:
-        return True
+
+    candidates = [
+        page.locator("#calendarregisteredmeetings"),
+        page.locator(".calendarregisteredmeetings"),
+    ]
+
+    for loc in candidates:
+        try:
+            if loc.count() == 0:
+                continue
+            text = norm(loc.first.inner_text(timeout=5000))
+            log(f"Registered meetings section: {text[:500]}")
+            if target_n in text:
+                return True
+        except Exception:
+            pass
+
     return False
+
 
 def main():
     target = date.today() + timedelta(days=DAYS_AHEAD)
