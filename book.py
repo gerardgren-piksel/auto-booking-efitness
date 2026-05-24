@@ -338,8 +338,6 @@ def event_candidates_for_rule(page, rule: BookingRule):
 
         if normalize_class_text(rule.class_name) not in normalize_class_text(text):
             continue
-        if rule.day_name and norm(rule.day_name) not in text:
-            continue
         if rule.time_text and norm(rule.time_text) not in text:
             continue
 
@@ -354,8 +352,6 @@ def candidate_matches_rule(candidate, rule: BookingRule):
         return False
 
     if normalize_class_text(rule.class_name) not in normalize_class_text(text):
-        return False
-    if rule.day_name and norm(rule.day_name) not in text:
         return False
     if rule.time_text and norm(rule.time_text) not in text:
         return False
@@ -413,7 +409,6 @@ def click_booking(page):
         page.locator(".popupwindow"),
         page.locator(".ui-dialog"),
         page.locator(".modal"),
-        page.locator("body"),
     ]
 
     for scope in scopes:
@@ -464,8 +459,6 @@ def rule_present_in_week_view(page, rule: BookingRule):
     body = norm(page.locator("body").inner_text(timeout=5000))
     if normalize_class_text(rule.class_name) not in normalize_class_text(body):
         return False
-    if rule.day_name and norm(rule.day_name) not in body:
-        return False
     if rule.time_text and norm(rule.time_text) not in body:
         return False
     return True
@@ -494,11 +487,6 @@ def try_book_rule(page, rule: BookingRule):
 
     ov_text = overlay_text(page)
     log(f"Overlay text preview: {ov_text[:500]}")
-
-    if rule.day_name and norm(rule.day_name) not in ov_text:
-        log(f"Overlay day mismatch for rule: {rule_label}")
-        close_overlay_if_possible(page)
-        return False
 
     if rule.time_text and norm(rule.time_text) not in ov_text:
         log(f"Overlay time mismatch for rule: {rule_label}")
@@ -542,4 +530,34 @@ def main():
             save_debug(page, "05_after_login")
 
             goto_schedule(page)
-            save_debug(page, "06_sche
+            save_debug(page, "06_schedule_before_next")
+
+            moved = go_next_week(page)
+            log(f"Moved next week: {moved}")
+            save_debug(page, "07_schedule_after_next")
+
+            booked_any = False
+
+            for rule in rules:
+                result = try_book_rule(page, rule)
+                if result:
+                    log(f"SUCCESS for rule: {rule}")
+                    booked_any = True
+
+            if not booked_any:
+                log("No rule was booked.")
+                save_debug(page, "12_no_rule_booked")
+
+        except PlaywrightTimeoutError as e:
+            log(f"Timeout: {e}")
+            save_debug(page, "99_timeout")
+            raise
+        except Exception as e:
+            log(f"Error: {e}")
+            save_debug(page, "99_error")
+            raise
+        finally:
+            browser.close()
+
+if __name__ == "__main__":
+    main()
