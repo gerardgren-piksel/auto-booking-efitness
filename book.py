@@ -257,10 +257,7 @@ def try_click_locator(page, loc):
     try:
         box = loc.bounding_box()
         if box:
-            page.mouse.click(
-                box["x"] + box["width"] / 2,
-                box["y"] + box["height"] / 2
-            )
+            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
             page.wait_for_timeout(1200)
             if overlay_visible(page):
                 return True
@@ -341,24 +338,27 @@ def event_candidates_for_rule(page, rule: BookingRule):
 
         matched.append(box)
 
-    if normalize_class_text(rule.class_name) == "HYBRID RACE" and rule.time_text in ("09:00", "10:00"):
-        scored = []
+    if rule.time_text and normalize_class_text(rule.class_name) in {"HYBRID RACE", "FUNCTIONAL BODYBUILDING", "CROSSFIT"}:
+        decorated = []
         for box in matched:
             try:
                 bb = box.bounding_box()
                 if bb:
-                    scored.append((bb["y"], box))
+                    decorated.append((bb["y"], box))
             except Exception:
                 pass
+        decorated.sort(key=lambda x: x[0])
 
-        scored.sort(key=lambda x: x[0])
+        if rule.time_text == "09:00" and decorated:
+            matched = [decorated[0][1]]
+        elif rule.time_text == "10:00" and decorated:
+            matched = [decorated[-1][1]]
+        elif rule.time_text == "18:50" and decorated:
+            matched = [decorated[-1][1]]
+        elif rule.time_text == "17:40" and decorated:
+            matched = [decorated[-1][1]]
 
-        if rule.time_text == "09:00" and scored:
-            matched = [scored[0][1]]
-        elif rule.time_text == "10:00" and scored:
-            matched = [scored[-1][1]]
-
-        log(f"Hybrid Race candidate positions: {[round(y, 1) for y, _ in scored]}")
+        log(f"{rule.class_name} candidate positions: {[round(y, 1) for y, _ in decorated]}")
 
     log(f"Matched event boxes for {rule.class_name}: {len(matched)}")
     return matched
@@ -467,11 +467,10 @@ def click_booking(page):
 def booking_success_text_present(page):
     text = overlay_text(page) + " " + norm(page.locator("body").inner_text(timeout=5000))
     success_markers = [
-        "ODWOŁAJ REZERWACJ",
-        "JESTEŚ ZAPISANY",
+        "JESTEŚ JUŻ ZAPISANY",
         "ZOSTAŁEŚ ZAPISANY",
         "REZERWACJA ZOSTAŁA",
-        "ANULUJ REZERWACJ",
+        "ODWOŁAJ REZERWACJ",
     ]
     return any(marker in text for marker in success_markers)
 
@@ -505,6 +504,11 @@ def try_book_rule(page, rule: BookingRule):
 
     ov_text = overlay_text(page)
     log(f"Overlay text preview: {ov_text[:500]}")
+
+    if rule.time_text and rule.time_text not in ov_text and not ("LISTĘ REZERWOWĄ" not in ov_text and "BRAK WOLNYCH MIEJSC" not in ov_text):
+        log(f"Overlay time mismatch for rule: {rule_label}")
+        close_overlay_if_possible(page)
+        return False
 
     booked = click_booking(page)
     log(f"Clicked booking control for rule {rule_label}: {booked}")
