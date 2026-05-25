@@ -295,43 +295,50 @@ def event_candidates_for_rule(page, rule: BookingRule):
             text = box.inner_text(timeout=1000)
         except Exception:
             text = "<no text>"
+
         try:
             bb = box.bounding_box()
             y = round(bb["y"], 1) if bb else None
         except Exception:
             y = None
+
         decorated.append((y, box, text))
 
-            decorated.sort(key=lambda x: (999999 if x[0] is None else x[0]))
+    decorated.sort(key=lambda x: (999999 if x[0] is None else x[0]))
+
+    log(f"Matched event boxes for {rule.class_name}: {len(decorated)}")
+    for idx, (y, _, text) in enumerate(decorated, start=1):
+        preview = re.sub(r"\s+", " ", text).strip()[:250]
+        log(f"Candidate {idx} y={y} text={preview}")
+
+    cls = normalize_class_text(rule.class_name)
 
     if rule.time_text:
-        cls = normalize_class_text(rule.class_name)
-        only = [item for item in decorated]
-
-        if cls == "HYBRID RACE" and len(only) >= 2 and rule.time_text == "10:00":
-            return [only[-1]]
+        if cls == "HYBRID RACE" and rule.time_text == "10:00" and len(decorated) >= 2:
+            return [decorated[-1]]
 
         if cls == "FUNCTIONAL BODYBUILDING" and rule.time_text == "18:50":
-            if len(only) >= 5:
-                return [only[2]]
-            if len(only) >= 3:
-                return [only[-2]]
+            if len(decorated) >= 5:
+                return [decorated[2]]
+            if len(decorated) >= 3:
+                return [decorated[-2]]
 
         if cls == "CROSSFIT" and rule.time_text == "17:40":
-            non_waiting = []
-            for item in only:
-                _, candidate_box, _ = item
-                try:
-                    text = norm(candidate_box.inner_text(timeout=1000))
-                except Exception:
-                    text = ""
-                if "-4 WOLNYCH" in text or "-1 WOLNYCH" in text or "-2 WOLNYCH" in text:
+            filtered = []
+            for item in decorated:
+                _, _, text = item
+                nt = norm(text)
+                if "-4 WOLNYCH" in nt or "-2 WOLNYCH" in nt or "-1 WOLNYCH" in nt:
                     continue
-                non_waiting.append(item)
-            if non_waiting:
-                return [non_waiting[0]]
+                if "FUNDAMENTALS" in nt:
+                    continue
+                filtered.append(item)
+
+            if filtered:
+                return [filtered[0]]
 
     return decorated
+
 
 
 def overlay_matches_rule(ov_text: str, rule: BookingRule):
