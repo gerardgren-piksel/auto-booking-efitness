@@ -195,10 +195,10 @@ def go_next_week(page):
     if not end_before:
         raise RuntimeError("Could not parse current week range.")
 
-    target_day = end_before + timedelta(days=7)
+    target_day = end_before + timedelta(days=1)
     log(f"Expected next week link day=: {target_day.isoformat()}")
 
-    target_day = end_before + timedelta(days=1)
+    href = get_next_week_href(page, target_day)
     log(f"Week next href found: {href}")
 
     if not href:
