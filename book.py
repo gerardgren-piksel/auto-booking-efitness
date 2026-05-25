@@ -272,6 +272,75 @@ def close_overlay_if_possible(page):
     except Exception:
         pass
 
+def parse_hhmm_to_minutes(value: str | None):
+    if not value:
+        return None
+    m = re.search(r"(\d{1,2}):(\d{2})", value)
+    if not m:
+        return None
+    return int(m.group(1)) * 60 + int(m.group(2))
+
+def nearest_hour_label_minutes(page, event_locator):
+    try:
+        handle = event_locator.element_handle()
+        if not handle:
+            return None
+
+        result = handle.evaluate("""
+        (el) => {
+            function textOf(node) {
+                return (node && node.innerText ? node.innerText : '').replace(/\\s+/g, ' ').trim();
+            }
+
+            const eventRect = el.getBoundingClientRect();
+            const all = Array.from(document.querySelectorAll('body *'));
+            let best = null;
+
+            for (const node of all) {
+                const txt = textOf(node);
+                if (!/^\\d{1,2}:\\d{2}$/.test(txt)) continue;
+
+                const r = node.getBoundingClientRect();
+                const dy = Math.abs((r.top + r.height / 2) - (eventRect.top + eventRect.height / 2));
+                const dx = Math.abs((r.left + r.width / 2) - (eventRect.left + eventRect.width / 2));
+
+                if (dx > 500) continue;
+
+                const score = dy * 10 + dx;
+                if (!best || score < best.score) {
+                    best = { text: txt, score: score };
+                }
+            }
+
+            return best ? best.text : null;
+        }
+        """)
+        return parse_hhmm_to_minutes(result)
+    except Exception:
+        return None
+
+def choose_candidates_by_time(page, decorated, target_time_text):
+    target_minutes = parse_hhmm_to_minutes(target_time_text)
+    if target_minutes is None or not decorated:
+        return decorated
+
+    scored = []
+
+    for item in decorated:
+        y, box, text = item
+        label_minutes = nearest_hour_label_minutes(page, box)
+        diff = abs(label_minutes - target_minutes) if label_minutes is not None else 999999
+        scored.append((diff, 999999 if y is None else y, item, label_minutes, text))
+
+    scored.sort(key=lambda x: (x[0], x[1]))
+
+    for diff, y, _, label_minutes, text in scored:
+        text_clean = re.sub(r"\s+", " ", text).strip()[:200]
+        log(f"Time score diff={diff} y={y} label_minutes={label_minutes} text={text_clean}")
+
+    best_item = scored[0][2]
+    return [best_item]
+
 def event_candidates_for_rule(page, rule: BookingRule):
     event_boxes = page.locator(".event")
     matched = []
@@ -311,50 +380,10 @@ def event_candidates_for_rule(page, rule: BookingRule):
         preview = re.sub(r"\s+", " ", text).strip()[:250]
         log(f"Candidate {idx} y={y} text={preview}")
 
-    cls = normalize_class_text(rule.class_name)
-
     if rule.time_text:
-        if cls == "FUNCTIONAL BODYBUILDING" and rule.time_text == "18:50":
-            clean = []
-            for item in decorated:
-                _, _, text = item
-                nt = norm(text)
-                if "-1 WOLNYCH" in nt or "-2 WOLNYCH" in nt or "-3 WOLNYCH" in nt or "-4 WOLNYCH" in nt:
-                    continue
-                clean.append(item)
-
-            if clean:
-                return [clean[-1]]
-            if decorated:
-                return [decorated[-1]]
-
-        if cls == "CROSSFIT" and rule.time_text == "17:40":
-            clean = []
-            for item in decorated:
-                _, _, text = item
-                nt = norm(text)
-                if "FUNDAMENTALS" in nt:
-                    continue
-                if "-4 WOLNYCH" in nt or "-3 WOLNYCH" in nt or "-2 WOLNYCH" in nt or "-1 WOLNYCH" in nt:
-                    continue
-                clean.append(item)
-
-            if clean:
-                return [clean[0]]
-
-        if cls == "HYBRID RACE" and rule.time_text == "10:00":
-            clean = []
-            for item in decorated:
-                _, _, text = item
-                nt = norm(text)
-                if "-1 WOLNYCH" in nt or "-2 WOLNYCH" in nt or "-3 WOLNYCH" in nt or "-4 WOLNYCH" in nt:
-                    continue
-                clean.append(item)
-
-            if clean:
-                return [clean[-1]]
-            if decorated:
-                return [decorated[-1]]
+        by_time = choose_candidates_by_time(page, decorated, rule.time_text)
+        if by_time:
+            return by_time
 
     return decorated
 
