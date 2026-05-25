@@ -198,7 +198,7 @@ def go_next_week(page):
     target_day = end_before + timedelta(days=7)
     log(f"Expected next week link day=: {target_day.isoformat()}")
 
-    href = get_next_week_href(page, target_day)
+    target_day = end_before + timedelta(days=1)
     log(f"Week next href found: {href}")
 
     if not href:
