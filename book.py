@@ -302,14 +302,37 @@ def event_candidates_for_rule(page, rule: BookingRule):
             y = None
         decorated.append((y, box, text))
 
-    decorated.sort(key=lambda x: (999999 if x[0] is None else x[0]))
+            decorated.sort(key=lambda x: (999999 if x[0] is None else x[0]))
 
-    log(f"Matched event boxes for {rule.class_name}: {len(decorated)}")
-    for idx, (y, _, text) in enumerate(decorated, start=1):
-        preview = re.sub(r"\s+", " ", text).strip()[:250]
-        log(f"Candidate {idx} y={y} text={preview}")
+    if rule.time_text:
+        cls = normalize_class_text(rule.class_name)
+        only = [item for item in decorated]
+
+        if cls == "HYBRID RACE" and len(only) >= 2 and rule.time_text == "10:00":
+            return [only[-1]]
+
+        if cls == "FUNCTIONAL BODYBUILDING" and rule.time_text == "18:50":
+            if len(only) >= 5:
+                return [only[2]]
+            if len(only) >= 3:
+                return [only[-2]]
+
+        if cls == "CROSSFIT" and rule.time_text == "17:40":
+            non_waiting = []
+            for item in only:
+                _, candidate_box, _ = item
+                try:
+                    text = norm(candidate_box.inner_text(timeout=1000))
+                except Exception:
+                    text = ""
+                if "-4 WOLNYCH" in text or "-1 WOLNYCH" in text or "-2 WOLNYCH" in text:
+                    continue
+                non_waiting.append(item)
+            if non_waiting:
+                return [non_waiting[0]]
 
     return decorated
+
 
 def overlay_matches_rule(ov_text: str, rule: BookingRule):
     if normalize_class_text(rule.class_name) not in normalize_class_text(ov_text):
