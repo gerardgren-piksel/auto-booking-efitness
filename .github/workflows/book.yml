@@ -13,7 +13,7 @@ on:
         default: "7"
 
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "2 0 * * *"
       timezone: "Europe/Warsaw"
 
 jobs:
@@ -57,6 +57,8 @@ jobs:
         env:
           EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
           EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
+          BOOKING_RULES: ${{ env.BOOKING_RULES }}
+          DAYS_AHEAD: ${{ env.DAYS_AHEAD }}
 
       - name: List files
         if: always()
