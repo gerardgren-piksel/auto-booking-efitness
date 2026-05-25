@@ -341,8 +341,8 @@ def open_class_details_matching_rule(page, rule: BookingRule):
     candidates = event_candidates_for_rule(page, rule)
 
     for idx, (_, candidate, preview_text) in enumerate(candidates, start=1):
-    preview_clean = re.sub(r"\s+", " ", preview_text).strip()[:200]
-    log(f"Trying candidate {idx}: {preview_clean}")
+        preview_clean = re.sub(r"\s+", " ", preview_text).strip()[:200]
+        log(f"Trying candidate {idx}: {preview_clean}")
 
         close_overlay_if_possible(page)
         page.wait_for_timeout(500)
