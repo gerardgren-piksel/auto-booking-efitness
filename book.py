@@ -314,21 +314,42 @@ def event_candidates_for_rule(page, rule: BookingRule):
     cls = normalize_class_text(rule.class_name)
 
     if rule.time_text:
-        if cls == "HYBRID RACE" and rule.time_text == "10:00" and len(decorated) >= 2:
-            return [decorated[-1]]
+        if cls == "HYBRID RACE" and rule.time_text == "10:00":
+            available = []
+            for item in decorated:
+                _, _, text = item
+                nt = norm(text)
+                if "-1 WOLNYCH" in nt or "-2 WOLNYCH" in nt or "-3 WOLNYCH" in nt or "-4 WOLNYCH" in nt:
+                    continue
+                available.append(item)
+
+            if available:
+                return [available[-1]]
+
+            if len(decorated) >= 2:
+                return [decorated[-1]]
 
         if cls == "FUNCTIONAL BODYBUILDING" and rule.time_text == "18:50":
-            if len(decorated) >= 5:
-                return [decorated[2]]
-            if len(decorated) >= 3:
-                return [decorated[-2]]
+            available = []
+            for item in decorated:
+                _, _, text = item
+                nt = norm(text)
+                if "-1 WOLNYCH" in nt or "-2 WOLNYCH" in nt or "-3 WOLNYCH" in nt or "-4 WOLNYCH" in nt:
+                    continue
+                available.append(item)
+
+            if available:
+                return [available[-1]]
+
+            if decorated:
+                return [decorated[-1]]
 
         if cls == "CROSSFIT" and rule.time_text == "17:40":
             filtered = []
             for item in decorated:
                 _, _, text = item
                 nt = norm(text)
-                if "-4 WOLNYCH" in nt or "-2 WOLNYCH" in nt or "-1 WOLNYCH" in nt:
+                if "-4 WOLNYCH" in nt or "-3 WOLNYCH" in nt or "-2 WOLNYCH" in nt or "-1 WOLNYCH" in nt:
                     continue
                 if "FUNDAMENTALS" in nt:
                     continue
@@ -338,6 +359,7 @@ def event_candidates_for_rule(page, rule: BookingRule):
                 return [filtered[0]]
 
     return decorated
+
 
 
 
