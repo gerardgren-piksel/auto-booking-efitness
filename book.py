@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta, datetime
 from pathlib import Path
 from urllib.parse import urljoin
+
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 BASE_URL = "https://cf43300-cms.efitness.com.pl/"
@@ -37,6 +38,16 @@ DAY_MAP = {
     "NIEDZIELA": "NIEDZIELA",
 }
 
+PL_DAY_BY_WEEKDAY = {
+    0: "PONIEDZIAŁEK",
+    1: "WTOREK",
+    2: "ŚRODA",
+    3: "CZWARTEK",
+    4: "PIĄTEK",
+    5: "SOBOTA",
+    6: "NIEDZIELA",
+}
+
 @dataclass
 class BookingRule:
     class_name: str
@@ -57,15 +68,29 @@ def slug(s: str) -> str:
 
 def save_debug(page, prefix):
     OUT.mkdir(exist_ok=True)
-    (OUT / f"{prefix}.html").write_text(page.content(), encoding="utf-8")
-    (OUT / f"{prefix}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
-    page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
+    try:
+        (OUT / f"{prefix}.html").write_text(page.content(), encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        (OUT / f"{prefix}.txt").write_text(page.locator("body").inner_text(), encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
+    except Exception:
+        pass
 
 def normalize_day_name(value: str | None):
     if not value:
         return None
     key = norm(value)
     return DAY_MAP.get(key, key)
+
+def normalize_class_text(value: str) -> str:
+    value = norm(value)
+    value = re.sub(r"[.,:;!?]+$", "", value).strip()
+    return value
 
 def parse_rules():
     rules = []
@@ -85,28 +110,27 @@ def parse_rules():
         if len(parts) == 1:
             rules.append(BookingRule(class_name=parts[0]))
         elif len(parts) == 2:
-            rules.append(BookingRule(
-                class_name=parts[0],
-                day_name=normalize_day_name(parts[1]),
-            ))
+            rules.append(
+                BookingRule(
+                    class_name=parts[0],
+                    day_name=normalize_day_name(parts[1]),
+                )
+            )
         else:
-            rules.append(BookingRule(
-                class_name=parts[0],
-                day_name=normalize_day_name(parts[1]),
-                time_text=parts[2],
-            ))
+            rules.append(
+                BookingRule(
+                    class_name=parts[0],
+                    day_name=normalize_day_name(parts[1]),
+                    time_text=parts[2],
+                )
+            )
 
     return rules
 
-def current_range(page):
-    txt = page.locator("body").inner_text(timeout=5000)
-    m = re.search(r"(\d{4}-\d{2}-\d{2})\s+do\s+(\d{4}-\d{2}-\d{2})", txt)
-    if not m:
-        return None, None, None
-    raw = m.group(0)
-    start = date.fromisoformat(m.group(1))
-    end = date.fromisoformat(m.group(2))
-    return raw, start, end
+def date_matches_rule(target_date: date, rule: BookingRule):
+    if not rule.day_name:
+        return True
+    return PL_DAY_BY_WEEKDAY[target_date.weekday()] == norm(rule.day_name)
 
 def find_login_frame(page):
     for frame in page.frames:
@@ -148,71 +172,11 @@ def login_user(page):
     click_login(frame)
     page.wait_for_timeout(3000)
 
-def goto_schedule(page):
-    page.goto(urljoin(BASE_URL, "kalendarz-zajec"), wait_until="domcontentloaded")
+def goto_day_schedule(page, target_date: date):
+    url = urljoin(BASE_URL, f"kalendarz-zajec?day={target_date.isoformat()}&view=DayByHour")
+    log(f"Opening day schedule: {url}")
+    page.goto(url, wait_until="domcontentloaded")
     page.wait_for_timeout(2500)
-
-def extract_all_day_links(page):
-    links = page.locator("a[href*='day=']")
-    data = []
-    count = links.count()
-
-    for i in range(count):
-        a = links.nth(i)
-        try:
-            href = a.get_attribute("href") or ""
-            title = a.get_attribute("title") or ""
-            text = (a.inner_text() or "").strip()
-        except Exception:
-            continue
-        data.append({"href": href, "title": title, "text": text})
-
-    return data
-
-def get_next_week_href(page, target_day):
-    links = extract_all_day_links(page)
-    log(f"All day links: {links}")
-
-    target_s = target_day.isoformat()
-
-    for item in links:
-        href = item["href"]
-        title = item["title"]
-        if title == "Dalej" and f"day={target_s}" in href:
-            return href
-
-    for item in links:
-        href = item["href"]
-        if f"day={target_s}" in href:
-            return href
-
-    return None
-
-def go_next_week(page):
-    raw_before, _, end_before = current_range(page)
-    log(f"Range before: {raw_before}")
-
-    if not end_before:
-        raise RuntimeError("Could not parse current week range.")
-
-    target_day = end_before + timedelta(days=1)
-    log(f"Expected next week link day=: {target_day.isoformat()}")
-
-    href = get_next_week_href(page, target_day)
-    log(f"Week next href found: {href}")
-
-    if not href:
-        raise RuntimeError("Week next href not found from day links.")
-
-    absolute_url = urljoin(BASE_URL, href)
-    log(f"Going directly to week URL: {absolute_url}")
-    page.goto(absolute_url, wait_until="domcontentloaded")
-    page.wait_for_timeout(3000)
-
-    raw_after, _, _ = current_range(page)
-    log(f"Range after goto: {raw_after}")
-
-    return raw_before != raw_after
 
 def overlay_visible(page):
     selectors = [
@@ -257,7 +221,10 @@ def try_click_locator(page, loc):
     try:
         box = loc.bounding_box()
         if box:
-            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.mouse.click(
+                box["x"] + box["width"] / 2,
+                box["y"] + box["height"] / 2
+            )
             page.wait_for_timeout(1200)
             if overlay_visible(page):
                 return True
@@ -266,38 +233,21 @@ def try_click_locator(page, loc):
 
     return False
 
-def registered_section_text(page):
-    candidates = [
-        page.locator("#calendarregisteredmeetings"),
-        page.locator(".calendarregisteredmeetings"),
+def overlay_text(page):
+    selectors = [
+        "#OverlayEventContent",
+        ".popupwindow",
+        ".ui-dialog",
+        ".modal",
     ]
-
-    for loc in candidates:
+    for sel in selectors:
+        loc = page.locator(sel)
         try:
-            if loc.count() == 0:
-                continue
-            return norm(loc.first.inner_text(timeout=5000))
+            if loc.count() > 0 and loc.first.is_visible():
+                return norm(loc.first.inner_text(timeout=3000))
         except Exception:
             pass
-
     return ""
-
-def normalize_class_text(value: str) -> str:
-    value = norm(value)
-    value = re.sub(r"[.,:;!?]+$", "", value).strip()
-    return value
-
-def already_booked(page, rule: BookingRule):
-    text = registered_section_text(page)
-    log(f"Registered meetings section: {text[:500]}")
-
-    if normalize_class_text(rule.class_name) not in normalize_class_text(text):
-        return False
-    if rule.day_name and norm(rule.day_name) not in text:
-        return False
-    if rule.time_text and norm(rule.time_text) not in text:
-        return False
-    return True
 
 def close_overlay_if_possible(page):
     candidates = [
@@ -326,7 +276,8 @@ def event_candidates_for_rule(page, rule: BookingRule):
     event_boxes = page.locator(".event")
     matched = []
 
-    for i in range(event_boxes.count()):
+    total = event_boxes.count()
+    for i in range(total):
         box = event_boxes.nth(i)
         try:
             text = norm(box.inner_text(timeout=1000))
@@ -338,80 +289,78 @@ def event_candidates_for_rule(page, rule: BookingRule):
 
         matched.append(box)
 
-    if rule.time_text and normalize_class_text(rule.class_name) in {"HYBRID RACE", "FUNCTIONAL BODYBUILDING", "CROSSFIT"}:
-        decorated = []
-        for box in matched:
-            try:
-                bb = box.bounding_box()
-                if bb:
-                    decorated.append((bb["y"], box))
-            except Exception:
-                pass
-        decorated.sort(key=lambda x: x[0])
+    decorated = []
+    for box in matched:
+        try:
+            text = box.inner_text(timeout=1000)
+        except Exception:
+            text = "<no text>"
+        try:
+            bb = box.bounding_box()
+            y = round(bb["y"], 1) if bb else None
+        except Exception:
+            y = None
+        decorated.append((y, box, text))
 
-        if rule.time_text == "09:00" and decorated:
-            matched = [decorated[0][1]]
-        elif rule.time_text == "10:00" and decorated:
-            matched = [decorated[-1][1]]
-        elif rule.time_text == "18:50" and decorated:
-            matched = [decorated[-1][1]]
-        elif rule.time_text == "17:40" and decorated:
-            matched = [decorated[-1][1]]
+    decorated.sort(key=lambda x: (999999 if x[0] is None else x[0]))
 
-        log(f"{rule.class_name} candidate positions: {[round(y, 1) for y, _ in decorated]}")
+    log(f"Matched event boxes for {rule.class_name}: {len(decorated)}")
+    for idx, (y, _, text) in enumerate(decorated, start=1):
+        preview = re.sub(r"\s+", " ", text).strip()[:250]
+        log(f"Candidate {idx} y={y} text={preview}")
 
-    log(f"Matched event boxes for {rule.class_name}: {len(matched)}")
-    return matched
+    return decorated
 
-def candidate_matches_rule(candidate, rule: BookingRule):
-    try:
-        text = norm(candidate.inner_text(timeout=1000))
-    except Exception:
+def overlay_matches_rule(ov_text: str, rule: BookingRule):
+    if normalize_class_text(rule.class_name) not in normalize_class_text(ov_text):
         return False
 
-    if normalize_class_text(rule.class_name) not in normalize_class_text(text):
+    if rule.time_text:
+        if norm(rule.time_text) in ov_text:
+            return True
+
+        if rule.class_name.strip().upper().startswith("HYBRID RACE"):
+            if "BRAK WOLNYCH MIEJSC" in ov_text or "LISTĘ REZERWOWĄ" in ov_text:
+                return False
+            if "ZAPISZ SIĘ" in ov_text:
+                return True
+
+        if rule.class_name.strip().upper().startswith("FUNCTIONAL BODYBUILDING"):
+            if "ZAPISZ SIĘ" in ov_text or "JESTEŚ JUŻ ZAPISANY" in ov_text:
+                return True
+
+        if rule.class_name.strip().upper().startswith("CROSSFIT"):
+            if "ZAPISZ SIĘ" in ov_text or "JESTEŚ JUŻ ZAPISANY" in ov_text:
+                return True
+
         return False
 
     return True
 
-def open_class_details(page, rule: BookingRule):
+def open_class_details_matching_rule(page, rule: BookingRule):
     candidates = event_candidates_for_rule(page, rule)
 
-    for idx, candidate in enumerate(candidates, start=1):
-        try:
-            text_preview = candidate.inner_text(timeout=1000)
-        except Exception:
-            text_preview = "<no text>"
-
-        if not candidate_matches_rule(candidate, rule):
-            continue
-
-        log(f"Trying candidate {idx}: {text_preview[:200]}")
+    for idx, (_, candidate, preview_text) in enumerate(candidates, start=1):
+        log(f"Trying candidate {idx}: {re.sub(r'\\s+', ' ', preview_text).strip()[:200]}")
 
         close_overlay_if_possible(page)
         page.wait_for_timeout(500)
 
-        if try_click_locator(page, candidate):
-            log(f"Overlay opened from candidate {idx}")
+        if not try_click_locator(page, candidate):
+            continue
+
+        ov_text = overlay_text(page)
+        log(f"Overlay text after candidate {idx}: {ov_text[:500]}")
+
+        if overlay_matches_rule(ov_text, rule):
+            log(f"Overlay accepted from candidate {idx}")
             return True
 
-    return False
+        log(f"Candidate {idx} rejected.")
+        close_overlay_if_possible(page)
+        page.wait_for_timeout(500)
 
-def overlay_text(page):
-    selectors = [
-        "#OverlayEventContent",
-        ".popupwindow",
-        ".ui-dialog",
-        ".modal",
-    ]
-    for sel in selectors:
-        loc = page.locator(sel)
-        try:
-            if loc.count() > 0 and loc.first.is_visible():
-                return norm(loc.first.inner_text(timeout=3000))
-        except Exception:
-            pass
-    return ""
+    return False
 
 def click_booking(page):
     patterns = [
@@ -466,38 +415,40 @@ def click_booking(page):
 
 def booking_success_text_present(page):
     text = overlay_text(page) + " " + norm(page.locator("body").inner_text(timeout=5000))
+    if "BRAK WOLNYCH MIEJSC" in text and "LISTĘ REZERWOWĄ" in text:
+        return False
+
     success_markers = [
+        "ODWOŁAJ REZERWACJ",
         "JESTEŚ JUŻ ZAPISANY",
         "ZOSTAŁEŚ ZAPISANY",
         "REZERWACJA ZOSTAŁA",
-        "ODWOŁAJ REZERWACJ",
     ]
     return any(marker in text for marker in success_markers)
 
-def rule_present_in_week_view(page, rule: BookingRule):
+def page_contains_rule(page, rule: BookingRule):
     body = norm(page.locator("body").inner_text(timeout=5000))
     if normalize_class_text(rule.class_name) not in normalize_class_text(body):
         return False
     return True
 
-def try_book_rule(page, rule: BookingRule):
+def try_book_rule_on_date(page, rule: BookingRule, target_date: date):
     close_overlay_if_possible(page)
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(700)
 
-    rule_label = f"{rule.class_name} | {rule.day_name or '*'} | {rule.time_text or '*'}"
+    rule_label = f"{target_date.isoformat()} | {rule.class_name} | {rule.day_name or '*'} | {rule.time_text or '*'}"
     log(f"Checking rule: {rule_label}")
 
-    if already_booked(page, rule):
-        log(f"Already booked for rule: {rule_label}")
+    goto_day_schedule(page, target_date)
+    save_debug(page, f"day_{target_date.isoformat()}_{slug(rule.class_name)}_before")
+
+    if not page_contains_rule(page, rule):
+        log(f"Rule not present in day view: {rule_label}")
         return False
 
-    if not rule_present_in_week_view(page, rule):
-        log(f"Rule not present in week view: {rule_label}")
-        return False
-
-    opened = open_class_details(page, rule)
+    opened = open_class_details_matching_rule(page, rule)
     log(f"Opened class details for rule {rule_label}: {opened}")
-    save_debug(page, f"09_after_class_open_{slug(rule_label)}")
+    save_debug(page, f"day_{target_date.isoformat()}_{slug(rule.class_name)}_open")
 
     if not opened:
         return False
@@ -505,30 +456,34 @@ def try_book_rule(page, rule: BookingRule):
     ov_text = overlay_text(page)
     log(f"Overlay text preview: {ov_text[:500]}")
 
-    if rule.time_text and rule.time_text not in ov_text and not ("LISTĘ REZERWOWĄ" not in ov_text and "BRAK WOLNYCH MIEJSC" not in ov_text):
-        log(f"Overlay time mismatch for rule: {rule_label}")
+    if "JESTEŚ JUŻ ZAPISANY" in ov_text or "ODWOŁAJ REZERWACJ" in ov_text:
+        log(f"Already booked in overlay for rule: {rule_label}")
+        close_overlay_if_possible(page)
+        return False
+
+    if "BRAK WOLNYCH MIEJSC" in ov_text and "LISTĘ REZERWOWĄ" in ov_text:
+        log(f"No free spots for rule: {rule_label}")
         close_overlay_if_possible(page)
         return False
 
     booked = click_booking(page)
     log(f"Clicked booking control for rule {rule_label}: {booked}")
     page.wait_for_timeout(3000)
-    save_debug(page, f"10_after_booking_click_{slug(rule_label)}")
+    save_debug(page, f"day_{target_date.isoformat()}_{slug(rule.class_name)}_after_click")
 
-    confirmed = already_booked(page, rule) or booking_success_text_present(page)
+    confirmed = booking_success_text_present(page)
     log(f"Booking confirmed for rule {rule_label}: {confirmed}")
-    save_debug(page, f"11_after_booking_check_{slug(rule_label)}")
+    save_debug(page, f"day_{target_date.isoformat()}_{slug(rule.class_name)}_after_check")
 
     close_overlay_if_possible(page)
     return confirmed
 
 def main():
-    target = date.today() + timedelta(days=DAYS_AHEAD)
     rules = parse_rules()
 
     log(f"Working dir: {Path.cwd()}")
     log(f"Output dir: {OUT.resolve()}")
-    log(f"Target date: {target.isoformat()}")
+    log(f"DAYS_AHEAD: {DAYS_AHEAD}")
     log(f"Booking rules: {rules}")
 
     if not LOGIN or not PASSWORD:
@@ -546,20 +501,27 @@ def main():
             login_user(page)
             save_debug(page, "05_after_login")
 
-            goto_schedule(page)
-            save_debug(page, "06_schedule_before_next")
-
-            moved = go_next_week(page)
-            log(f"Moved next week: {moved}")
-            save_debug(page, "07_schedule_after_next")
-
             booked_any = False
 
-            for rule in rules:
-                result = try_book_rule(page, rule)
-                if result:
-                    log(f"SUCCESS for rule: {rule}")
-                    booked_any = True
+            start_date = date.today()
+            end_date = date.today() + timedelta(days=DAYS_AHEAD)
+
+            log(f"Date window: {start_date.isoformat()} -> {end_date.isoformat()}")
+
+            current = start_date
+            while current <= end_date:
+                log(f"Processing date: {current.isoformat()} ({PL_DAY_BY_WEEKDAY[current.weekday()]})")
+
+                for rule in rules:
+                    if not date_matches_rule(current, rule):
+                        continue
+
+                    result = try_book_rule_on_date(page, rule, current)
+                    if result:
+                        log(f"SUCCESS for date {current.isoformat()} and rule: {rule}")
+                        booked_any = True
+
+                current += timedelta(days=1)
 
             if not booked_any:
                 log("No rule was booked.")
