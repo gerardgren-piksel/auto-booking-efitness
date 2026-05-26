@@ -381,21 +381,21 @@ def event_candidates_for_rule(page, rule: BookingRule):
         log(f"Candidate {idx} y={y} text={preview}")
 
     if rule.time_text:
-    if cls == "HYBRID RACE" and rule.time_text == "10:00":
-        any_time = any(nearest_hour_label_minutes(page, box) is not None for _, box, _ in decorated)
-        if any_time:
-            by_time = choose_candidates_by_time(page, decorated, rule.time_text)
-            if by_time:
-                return by_time
+        if normalize_class_text(rule.class_name) == "HYBRID RACE" and rule.time_text == "10:00":
+            any_time = any(nearest_hour_label_minutes(page, box) is not None for _, box, _ in decorated)
+            if any_time:
+                by_time = choose_candidates_by_time(page, decorated, rule.time_text)
+                if by_time:
+                    return by_time
 
-        if len(decorated) >= 2:
-            return [decorated[-1]]
-        if decorated:
-            return [decorated[0]]
+            if len(decorated) >= 2:
+                return [decorated[-1]]
+            if decorated:
+                return [decorated[0]]
 
-    by_time = choose_candidates_by_time(page, decorated, rule.time_text)
-    if by_time:
-        return by_time
+        by_time = choose_candidates_by_time(page, decorated, rule.time_text)
+        if by_time:
+            return by_time
 
     return decorated
 
