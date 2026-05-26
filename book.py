@@ -348,13 +348,21 @@ def in_time_window(minutes, start="17:30", end="18:30"):
     return to_min(start) <= minutes <= to_min(end)
 
 
-def event_candidates_for_rule(decorated, cls, rule):
+def event_candidates_for_rule(page, rule):
+    decorated = []
+
+    # ... tutaj zostawiasz swój obecny kod, który zbiera kandydatów do decorated ...
+
     if not decorated:
         return []
 
-    # CrossFit: wybieraj tylko slot w przedziale 17:30–18:30,
-    # nie filtruj po ZASTĘPSTWO, odrzucaj tylko FUNDAMENTALS.
-    if cls == "CROSSFIT" and rule.time_text == "17:40":
+    def in_time_window(minutes, start="17:30", end="18:30"):
+        def to_min(t):
+            h, m = map(int, t.split(":"))
+            return h * 60 + m
+        return to_min(start) <= minutes <= to_min(end)
+
+    if rule.class_name.upper().startswith("CROSSFIT") and rule.time_text == "17:40":
         clean = []
         for item in decorated:
             _, _, text = item
@@ -379,22 +387,13 @@ def event_candidates_for_rule(decorated, cls, rule):
         if clean:
             return [clean[0]]
 
-    # pozostałe reguły zostają bez zmian
-    if cls == "HYBRID RACE":
-        # twoja dotychczasowa logika
-        pass
+    # pozostaw tutaj całą Twoją dotychczasową logikę dla:
+    # HYBRID RACE
+    # KETTLEBELLS
+    # FUNCTIONAL BODYBUILDING
+    # itd.
 
-    if cls == "FUNCTIONAL BODYBUILDING":
-        # twoja dotychczasowa logika
-        pass
-
-    if cls == "KETTLEBELLS":
-        # twoja dotychczasowa logika
-        pass
-
-    # domyślny fallback
     return [decorated[0]]
-
 
 
 
