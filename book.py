@@ -383,10 +383,16 @@ def event_candidates_for_rule(page, rule: BookingRule):
         except Exception:
             continue
 
-        if normalize_class_text(rule.class_name) not in normalize_class_text(text):
+        candidate_text = normalize_class_text(text)
+        needle = normalize_class_text(rule.class_name)
+
+        if needle in candidate_text:
+            matched.append(box)
             continue
 
-        matched.append(box)
+        if all(token in candidate_text for token in needle.split() if len(token) >= 4):
+            matched.append(box)
+            continue
 
     decorated = []
     for box in matched:
@@ -547,9 +553,16 @@ def booking_success_text_present(page):
 
 def page_contains_rule(page, rule: BookingRule):
     body = norm(page.locator("body").inner_text(timeout=5000))
-    if normalize_class_text(rule.class_name) not in normalize_class_text(body):
-        return False
-    return True
+    needle = normalize_class_text(rule.class_name)
+
+    if needle in body:
+        return True
+
+    for token in needle.split():
+        if len(token) >= 4 and token in body:
+            return True
+
+    return False
 
 def try_book_rule_on_date(page, rule: BookingRule, target_date: date):
     close_overlay_if_possible(page)
