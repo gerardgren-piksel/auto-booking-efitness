@@ -132,6 +132,14 @@ def date_matches_rule(target_date: date, rule: BookingRule):
         return True
     return PL_DAY_BY_WEEKDAY[target_date.weekday()] == norm(rule.day_name)
 
+def next_matching_dates(start: date, rule: BookingRule, days_ahead: int):
+    end = start + timedelta(days=days_ahead)
+    current = start
+    while current <= end:
+        if date_matches_rule(current, rule):
+            yield current
+        current += timedelta(days=1)
+
 def find_login_frame(page):
     for frame in page.frames:
         if "Login/SystemLogin" in frame.url:
@@ -399,9 +407,6 @@ def event_candidates_for_rule(page, rule: BookingRule):
 
     return decorated
 
-
-
-
 def overlay_matches_rule(ov_text: str, rule: BookingRule):
     if normalize_class_text(rule.class_name) not in normalize_class_text(ov_text):
         return False
@@ -594,26 +599,22 @@ def main():
             save_debug(page, "05_after_login")
 
             booked_any = False
-
             start_date = date.today()
-            end_date = date.today() + timedelta(days=DAYS_AHEAD)
+            end_date = start_date + timedelta(days=DAYS_AHEAD)
 
             log(f"Date window: {start_date.isoformat()} -> {end_date.isoformat()}")
 
-            current = start_date
-            while current <= end_date:
-                log(f"Processing date: {current.isoformat()} ({PL_DAY_BY_WEEKDAY[current.weekday()]})")
+            for rule in rules:
+                matched_dates = list(next_matching_dates(start_date, rule, DAYS_AHEAD))
+                log(f"Rule {rule}: matched dates {[d.isoformat() for d in matched_dates]}")
 
-                for rule in rules:
-                    if not date_matches_rule(current, rule):
-                        continue
-
+                for current in matched_dates:
+                    log(f"Processing date: {current.isoformat()} ({PL_DAY_BY_WEEKDAY[current.weekday()]})")
                     result = try_book_rule_on_date(page, rule, current)
                     if result:
                         log(f"SUCCESS for date {current.isoformat()} and rule: {rule}")
                         booked_any = True
-
-                current += timedelta(days=1)
+                        break
 
             if not booked_any:
                 log("No rule was booked.")
