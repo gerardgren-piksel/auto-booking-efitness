@@ -132,6 +132,28 @@ def date_matches_rule(target_date: date, rule: BookingRule):
         return True
     return PL_DAY_BY_WEEKDAY[target_date.weekday()] == norm(rule.day_name)
 
+def weekday_number_from_rule(rule: BookingRule):
+    if not rule.day_name:
+        return None
+
+    normalized = normalize_day_name(rule.day_name)
+    for weekday_num, pl_name in PL_DAY_BY_WEEKDAY.items():
+        if pl_name == normalized:
+            return weekday_num
+    return None
+
+def target_date_for_rule(today: date, rule: BookingRule):
+    weekday_num = weekday_number_from_rule(rule)
+
+    if weekday_num is None:
+        return today + timedelta(days=7)
+
+    days_until = (weekday_num - today.weekday()) % 7
+    if days_until == 0:
+        days_until = 7
+
+    return today + timedelta(days=days_until)
+
 def next_matching_dates(start: date, rule: BookingRule, days_ahead: int):
     end = start + timedelta(days=days_ahead)
     current = start
@@ -599,22 +621,22 @@ def main():
             save_debug(page, "05_after_login")
 
             booked_any = False
-            start_date = date.today()
-            end_date = start_date + timedelta(days=DAYS_AHEAD)
+            today = date.today()
 
-            log(f"Date window: {start_date.isoformat()} -> {end_date.isoformat()}")
+            log(f"Today: {today.isoformat()} ({PL_DAY_BY_WEEKDAY[today.weekday()]})")
 
             for rule in rules:
-                matched_dates = list(next_matching_dates(start_date, rule, DAYS_AHEAD))
-                log(f"Rule {rule}: matched dates {[d.isoformat() for d in matched_dates]}")
+                target_date = target_date_for_rule(today, rule)
+                log(
+                    f"Rule target date: {rule.class_name} | "
+                    f"{rule.day_name or '*'} | {rule.time_text or '*'} -> "
+                    f"{target_date.isoformat()} ({PL_DAY_BY_WEEKDAY[target_date.weekday()]})"
+                )
 
-                for current in matched_dates:
-                    log(f"Processing date: {current.isoformat()} ({PL_DAY_BY_WEEKDAY[current.weekday()]})")
-                    result = try_book_rule_on_date(page, rule, current)
-                    if result:
-                        log(f"SUCCESS for date {current.isoformat()} and rule: {rule}")
-                        booked_any = True
-                        break
+                result = try_book_rule_on_date(page, rule, target_date)
+                if result:
+                    log(f"SUCCESS for date {target_date.isoformat()} and rule: {rule}")
+                    booked_any = True
 
             if not booked_any:
                 log("No rule was booked.")
