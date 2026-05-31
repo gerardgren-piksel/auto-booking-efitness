@@ -13,8 +13,10 @@ on:
         default: "7"
 
   schedule:
-    - cron: "30 0 * * *"
-      timezone: "Europe/Warsaw"
+    schedule:
+      - cron: "5 23 * * *"
+      - cron: "35 23 * * *"
+      - cron: "5 0 * * *"
 
 jobs:
   book:
