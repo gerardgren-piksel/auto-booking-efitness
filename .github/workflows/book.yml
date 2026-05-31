@@ -13,9 +13,8 @@ on:
         default: "7"
 
   schedule:
-      - cron: "*/5 * * * *"
-    
-      
+    - cron: "17 0 * * *"
+      timezone: "Europe/Warsaw"
 
 jobs:
   book:
@@ -37,46 +36,38 @@ jobs:
           python -m playwright install chromium
 
       - name: Prepare env
+        shell: bash
         run: |
-          echo "BOOKING_RULES<<EOF" >> $GITHUB_ENV
-          echo "${{ github.event.inputs.booking_rules || vars.BOOKING_RULES }}" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          echo "DAYS_AHEAD=${{ github.event.inputs.days_ahead || vars.DAYS_AHEAD || '7' }}" >> $GITHUB_ENV
+          echo "EFITNESS_LOGIN=${{ secrets.EFITNESS_LOGIN }}" >> $GITHUB_ENV
+          echo "EFITNESS_PASSWORD=${{ secrets.EFITNESS_PASSWORD }}" >> $GITHUB_ENV
 
-      - name: Debug variables
-        run: |
-          echo "DAYS_AHEAD=$DAYS_AHEAD"
-          echo "BOOKING_RULES<<EOF"
-          echo "$BOOKING_RULES"
-          echo "EOF"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.booking_rules }}" ]; then
+            {
+              echo "BOOKING_RULES<<EOF"
+              echo "${{ github.event.inputs.booking_rules }}"
+              echo "EOF"
+            } >> $GITHUB_ENV
+          else
+            {
+              echo "BOOKING_RULES<<EOF"
+              echo "${{ secrets.BOOKING_RULES }}"
+              echo "EOF"
+            } >> $GITHUB_ENV
+          fi
 
-      - name: Check syntax
-        run: python -m py_compile book.py
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.days_ahead }}" ]; then
+            echo "DAYS_AHEAD=${{ github.event.inputs.days_ahead }}" >> $GITHUB_ENV
+          else
+            echo "DAYS_AHEAD=${{ secrets.DAYS_AHEAD }}" >> $GITHUB_ENV
+          fi
 
       - name: Run booking
         run: python book.py
-        env:
-          EFITNESS_LOGIN: ${{ secrets.EFITNESS_LOGIN }}
-          EFITNESS_PASSWORD: ${{ secrets.EFITNESS_PASSWORD }}
-          BOOKING_RULES: ${{ env.BOOKING_RULES }}
-          DAYS_AHEAD: ${{ env.DAYS_AHEAD }}
-
-      - name: List files
-        if: always()
-        run: |
-          pwd
-          echo "--- ls root ---"
-          ls -la
-          echo "--- ls output ---"
-          ls -la output || true
-          echo "--- find repo files ---"
-          find . -maxdepth 3 -type f | sort
 
       - name: Upload debug artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: booking-debug
-          path: output/**
-          if-no-files-found: warn
-          retention-days: 7
+          path: output/
+          if-no-files-found: ignore
