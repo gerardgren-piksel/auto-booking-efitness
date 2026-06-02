@@ -13,7 +13,9 @@ on:
         default: "7"
 
   schedule:
-    - cron: "17 0 * * *"
+    - cron: "18 0 * * *"
+      timezone: "Europe/Warsaw"
+    - cron: "7 * * * *"
       timezone: "Europe/Warsaw"
 
 jobs:
@@ -58,7 +60,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.days_ahead }}" ]; then
             echo "DAYS_AHEAD=${{ github.event.inputs.days_ahead }}" >> $GITHUB_ENV
           else
-            echo "DAYS_AHEAD=${{ secrets.DAYS_AHEAD }}" >> $GITHUB_ENV
+            echo "DAYS_AHEAD=7" >> $GITHUB_ENV
           fi
 
       - name: Run booking
