@@ -52,7 +52,7 @@ jobs:
           else
             {
               echo "BOOKING_RULES<<EOF"
-              echo "${{ secrets.BOOKING_RULES }}"
+              echo "${{ vars.BOOKING_RULES }}"
               echo "EOF"
             } >> $GITHUB_ENV
           fi
