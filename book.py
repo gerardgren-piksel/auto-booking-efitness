@@ -639,7 +639,13 @@ def main():
                 ZoneInfo("Europe/Warsaw")
             ).date()
 
-            log(f"Today: {today.isoformat()} ({PL_DAY_BY_WEEKDAY[today.weekday()]})")
+            warsaw_now = datetime.now(ZoneInfo("Europe/Warsaw"))
+
+            log(
+                f"Warsaw time: {warsaw_now.isoformat()} | "
+                f"Today: {today.isoformat()} "
+                f"({PL_DAY_BY_WEEKDAY[today.weekday()]})"
+            )
 
             for rule in rules:
                 target_date = target_date_for_rule(today, rule)
