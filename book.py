@@ -635,7 +635,9 @@ def main():
             save_debug(page, "05_after_login")
 
             booked_any = False
-            today = date.today()
+            today = datetime.now(
+                ZoneInfo("Europe/Warsaw")
+            ).date()
 
             log(f"Today: {today.isoformat()} ({PL_DAY_BY_WEEKDAY[today.weekday()]})")
 
