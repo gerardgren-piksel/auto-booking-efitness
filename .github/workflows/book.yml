@@ -17,6 +17,8 @@ on:
       timezone: "Europe/Warsaw"
     - cron: "7 * * * *"
       timezone: "Europe/Warsaw"
+    - cron: "21 1 * * *"
+      timezone: "Europe/Warsaw"
 
 jobs:
   book:
