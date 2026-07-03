@@ -16,8 +16,8 @@ from booking.config import (
     BOOKING_RULES_RAW,
     DAYS_AHEAD,
     OUT,
-    )
-    LOG_PATH = OUT / "run.log"
+)
+LOG_PATH = OUT / "run.log"
 from booking.days import DAY_MAP, PL_DAY_BY_WEEKDAY
 
 @dataclass
