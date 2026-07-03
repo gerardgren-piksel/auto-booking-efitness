@@ -18,7 +18,7 @@ from booking.config import (
     OUT,
 )
 LOG_PATH = OUT / "run.log"
-
+from booking.days import DAY_MAP, PL_DAY_BY_WEEKDAY
 
 @dataclass
 class BookingRule:
