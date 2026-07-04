@@ -1,3 +1,11 @@
+import re
+from datetime import datetime
+
+from booking.config import OUT
+
+LOG_PATH = OUT / "run.log"
+
+
 def log(msg):
     line = f"{datetime.now().isoformat(timespec='seconds')} | {msg}"
     print(line, flush=True)
