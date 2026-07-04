@@ -6,6 +6,16 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import urljoin
 from booking.utils import log, norm, slug
+from booking.rules import (
+    BookingRule,
+    normalize_day_name,
+    normalize_class_text,
+    parse_rules,
+    date_matches_rule,
+    weekday_number_from_rule,
+    target_date_for_rule,
+    next_matching_dates,
+)
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
