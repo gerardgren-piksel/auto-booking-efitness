@@ -5,6 +5,7 @@ from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import urljoin
+from booking.utils import log, norm, slug
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
