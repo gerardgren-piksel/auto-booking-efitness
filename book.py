@@ -31,7 +31,7 @@ from booking.config import (
 
 from booking.days import DAY_MAP, PL_DAY_BY_WEEKDAY
 
-LOG_PATH = OUT / "run.log"
+
 
 
 
