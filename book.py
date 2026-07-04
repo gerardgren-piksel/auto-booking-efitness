@@ -1,6 +1,5 @@
 import os
 import re
-
 from datetime import date, timedelta, datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -16,9 +15,7 @@ from booking.rules import (
     target_date_for_rule,
     next_matching_dates,
 )
-
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-
 from booking.config import (
     BASE_URL,
     LOGIN_URL,
@@ -28,12 +25,7 @@ from booking.config import (
     DAYS_AHEAD,
     OUT,
 )
-
 from booking.days import DAY_MAP, PL_DAY_BY_WEEKDAY
-
-
-
-
 
 
 def save_debug(page, prefix):
@@ -50,14 +42,6 @@ def save_debug(page, prefix):
         page.screenshot(path=str(OUT / f"{prefix}.png"), full_page=True)
     except Exception:
         pass
-
-
-
-
-
-
-
-
 
 def find_login_frame(page):
     for frame in page.frames:
