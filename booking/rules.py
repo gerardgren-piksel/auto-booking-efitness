@@ -11,4 +11,12 @@ class BookingRule:
     class_name: str
     day_name: str | None = None
     time_text: str | None = None
+    
+    normalize_day_name()
+    normalize_class_text()
+    parse_rules()
+    date_matches_rule()
+    weekday_number_from_rule()
+    target_date_for_rule()
+    next_matching_dates()
 
