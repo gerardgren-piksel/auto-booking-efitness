@@ -1,3 +1,5 @@
+from booking.config import OUT
+
 def save_debug(page, prefix):
     OUT.mkdir(exist_ok=True)
     try:
