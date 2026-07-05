@@ -26,7 +26,7 @@ from booking.config import (
     OUT,
 )
 from booking.days import DAY_MAP, PL_DAY_BY_WEEKDAY
-
+from booking.debug import save_debug
 
 def save_debug(page, prefix):
     OUT.mkdir(exist_ok=True)
