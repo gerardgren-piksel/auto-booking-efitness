@@ -2,28 +2,32 @@ import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from booking.config import BOOKING_RULES_RAW
 from booking.days import DAY_MAP, PL_DAY_BY_WEEKDAY
 from booking.utils import norm
-from booking.config import BOOKING_RULES_RAW
+
 
 @dataclass
 class BookingRule:
     class_name: str
     day_name: str | None = None
     time_text: str | None = None
-    
-    def normalize_day_name(value: str | None):
+
+
+def normalize_day_name(value: str | None):
     if not value:
         return None
     key = norm(value)
     return DAY_MAP.get(key, key)
 
-    def normalize_class_text(value: str) -> str:
+
+def normalize_class_text(value: str) -> str:
     value = norm(value)
     value = re.sub(r"[.,:;!?]+$", "", value).strip()
     return value
-    
-    def parse_rules():
+
+
+def parse_rules():
     rules = []
     raw = BOOKING_RULES_RAW.strip()
 
@@ -57,17 +61,28 @@ class BookingRule:
             )
 
     return rules
-    
-    def date_matches_rule(target_date: date, rule: BookingRule):
+
+
+def date_matches_rule(target_date: date, rule: BookingRule):
     if not rule.day_name:
         return True
     return PL_DAY_BY_WEEKDAY[target_date.weekday()] == norm(rule.day_name)
 
-    def weekday_number_from_rule(rule: BookingRule):
+
+def weekday_number_from_rule(rule: BookingRule):
     if not rule.day_name:
         return None
-        
-    def target_date_for_rule(today: date, rule: BookingRule):
+
+    normalized = normalize_day_name(rule.day_name)
+
+    for number, day in PL_DAY_BY_WEEKDAY.items():
+        if day == normalized:
+            return number
+
+    return None
+
+
+def target_date_for_rule(today: date, rule: BookingRule):
     weekday_num = weekday_number_from_rule(rule)
 
     if weekday_num is None:
@@ -79,12 +94,12 @@ class BookingRule:
 
     return today + timedelta(days=days_until)
 
-    def next_matching_dates(start: date, rule: BookingRule, days_ahead: int):
+
+def next_matching_dates(start: date, rule: BookingRule, days_ahead: int):
     end = start + timedelta(days=days_ahead)
     current = start
+
     while current <= end:
         if date_matches_rule(current, rule):
             yield current
         current += timedelta(days=1)
-
-
