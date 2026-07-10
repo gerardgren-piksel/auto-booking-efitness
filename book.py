@@ -33,29 +33,9 @@ from booking.login import login_user
 
 
 
-def goto_day_schedule(page, target_date: date):
-    url = urljoin(BASE_URL, f"kalendarz-zajec?day={target_date.isoformat()}&view=DayByHour")
-    log(f"Opening day schedule: {url}")
-    page.goto(url, wait_until="domcontentloaded")
-    page.wait_for_timeout(2500)
 
-def overlay_visible(page):
-    selectors = [
-        "#OverlayEventContent",
-        ".popupwindow",
-        ".modal",
-        ".ui-dialog",
-        ".overlay",
-    ]
 
-    for sel in selectors:
-        loc = page.locator(sel)
-        try:
-            if loc.count() > 0 and loc.first.is_visible():
-                return True
-        except Exception:
-            pass
-    return False
+
 
 def try_click_locator(page, loc):
     try:
