@@ -28,7 +28,12 @@ from booking.config import (
 from booking.days import DAY_MAP, PL_DAY_BY_WEEKDAY
 from booking.debug import save_debug
 from booking.login import login_user
-
+from booking.booking import (
+    goto_day_schedule,
+    overlay_visible,
+    overlay_text,
+    close_overlay_if_possible,
+)
 
 
 
